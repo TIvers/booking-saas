@@ -10,7 +10,6 @@ use App\Actions\Booking\CreateBookingAction;
 use App\Actions\Booking\RescheduleBookingAction;
 use App\Enums\BookingStatus;
 use App\Enums\Role;
-use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Membership;
 use App\Models\Service;
@@ -21,7 +20,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-class BookingController extends Controller
+class BookingController
 {
     public function index(Request $request): JsonResponse
     {

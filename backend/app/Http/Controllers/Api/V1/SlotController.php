@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Http\Controllers\Controller;
 use App\Models\Service;
 use App\Models\Staff;
 use App\Services\Slots\SlotGenerator;
@@ -14,7 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-class SlotController extends Controller
+class SlotController
 {
     public function index(Request $request): JsonResponse
     {
