@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BookingController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\DemoPaymentController;
 use App\Http\Controllers\Api\V1\LocationController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServiceController;
@@ -57,5 +58,7 @@ Route::prefix('v1')
             Route::get('/bookings/{booking}', [BookingController::class, 'show']);
             Route::post('/bookings/{booking}/cancel', [BookingController::class, 'cancel']);
             Route::post('/bookings/{booking}/reschedule', [BookingController::class, 'reschedule']);
+            Route::post('/bookings/{booking}/demo-payment', [DemoPaymentController::class, 'store']);
+            Route::post('/bookings/{booking}/demo-payment/result', [DemoPaymentController::class, 'complete']);
         });
     });

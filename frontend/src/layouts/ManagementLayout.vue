@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
+import { useTenantStore } from '@/stores/tenant'
+
+const tenantStore = useTenantStore()
+const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_enabled ?? false)
 </script>
 
 <template>
@@ -19,6 +24,10 @@ import { RouterLink, RouterView } from 'vue-router'
       <RouterLink :to="{ name: 'manage-services' }">Услуги</RouterLink>
       <RouterLink :to="{ name: 'manage-staff' }">Команда</RouterLink>
     </nav>
+
+    <p v-if="demoPaymentsEnabled" class="demo-payment-notice" role="note">
+      Демо-оплата включена: отметка оплаты не означает реальное поступление денег.
+    </p>
 
     <RouterView />
   </section>
@@ -75,5 +84,14 @@ h1 {
 .management-nav a.router-link-active {
   background: #e8eee9;
   color: #204c43;
+}
+
+.demo-payment-notice {
+  background: #fff6df;
+  border: 1px solid #efd28a;
+  border-radius: 0.75rem;
+  color: #70551b;
+  margin: 0;
+  padding: 0.8rem 1rem;
 }
 </style>

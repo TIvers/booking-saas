@@ -14,10 +14,10 @@ Initial endpoints:
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
 
-`GET /api/v1/tenant` includes the tenant's ISO 4217 `currency` code. The
-database defaults existing and new tenants to `USD`; update `tenants.currency`
-to configure a different currency. Service prices are stored in hundredths of
-the configured currency.
+`GET /api/v1/tenant` includes the tenant's ISO 4217 `currency` code and the
+`demo_payments_enabled` feature flag. The database defaults existing and new
+tenants to `USD`; update `tenants.currency` to configure a different currency.
+Service prices are stored in hundredths of the configured currency.
 
 ## Catalog and schedules
 
@@ -56,6 +56,12 @@ for the same day.
 - Services without a deposit are confirmed immediately. A service with a deposit
   creates a pending reservation for `BOOKING_RESERVATION_TTL_MINUTES`; a tenant
   manager can confirm it through `POST /api/v1/bookings/{id}/confirm`.
+- When `PAYMENTS_DEMO_ENABLED=true`, the booking owner can call
+  `POST /api/v1/bookings/{id}/demo-payment` and then submit `outcome=succeeded`
+  or `outcome=failed` to `/demo-payment/result`. Success confirms the booking;
+  failure cancels it. This is a simulator only: it never charges a card and
+  must not be treated as evidence of a real payment. It is disabled by default;
+  the demo environment explicitly enables it.
 - `GET /api/v1/bookings` lists the caller's bookings (or all tenant bookings for
   an owner/manager); `GET /api/v1/bookings/{id}` applies the same ownership
   rules. Customers can cancel or reschedule only their own bookings. Owners and
@@ -63,8 +69,8 @@ for the same day.
 - `POST /api/v1/bookings/{id}/cancel` returns the retained deposit and amount
   due for refund. Customer cancellations are free until
   `BOOKING_FREE_CANCELLATION_HOURS` before the appointment; late cancellations
-  may retain the paid deposit. This stage calculates the refund amount but does
-  not call a payment provider.
+  may retain the paid deposit. The refund calculation excludes demo payments;
+  no payment provider is called.
 - `POST /api/v1/bookings/{id}/reschedule` accepts a new ISO-8601 `starts_at`.
   The old interval remains booked unless the new slot is accepted.
 

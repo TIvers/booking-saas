@@ -40,6 +40,13 @@ export interface Booking {
   expires_at: string | null
 }
 
+export interface DemoPayment {
+  id: number
+  status: 'pending' | 'succeeded' | 'failed'
+  amount_cents: number
+  currency: string
+}
+
 export interface BookingRecord extends Booking {
   service: Service
   staff: Pick<StaffMember, 'id' | 'display_name' | 'location'>

@@ -6,6 +6,7 @@ defineProps<{
   services: Service[]
   modelValue: number | null
   currency: string
+  demoPaymentsEnabled: boolean
 }>()
 
 const emit = defineEmits<{
@@ -41,15 +42,23 @@ const emit = defineEmits<{
         <button
           type="button"
           class="service-card__select"
-          :disabled="service.deposit_cents > 0"
+          :disabled="service.deposit_cents > 0 && !demoPaymentsEnabled"
           @click="emit('update:modelValue', service.id)"
         >
-          {{ service.deposit_cents > 0 ? 'Оплата недоступна' : modelValue === service.id ? 'Выбрана' : 'Выбрать' }}
+          {{
+            service.deposit_cents > 0 && !demoPaymentsEnabled
+              ? 'Оплата недоступна'
+              : modelValue === service.id ? 'Выбрана' : 'Выбрать'
+          }}
         </button>
       </div>
 
       <p v-if="service.deposit_cents > 0" class="service-card__notice">
-        Для этой услуги нужна предоплата. Онлайн-оплата пока не подключена.
+        {{
+          demoPaymentsEnabled
+            ? 'Доступна только демо-оплата: реальные деньги не списываются.'
+            : 'Для этой услуги нужна предоплата, но оплата сейчас недоступна.'
+        }}
       </p>
     </article>
   </div>

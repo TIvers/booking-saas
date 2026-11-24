@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Booking;
 
 use App\Enums\BookingStatus;
+use App\Enums\PaymentStatus;
 use App\Exceptions\SlotAlreadyTakenException;
 use App\Jobs\ReleaseExpiredReservations;
 use App\Models\Booking;
+use App\Models\Payment;
 use App\Models\Service;
 use App\Models\Staff;
 use App\Models\User;
@@ -109,16 +111,26 @@ class CreateBookingAction
 
     private function cancelExpiredReservations(Staff $staff, CarbonImmutable $now): void
     {
-        Booking::query()
+        $expiredBookings = Booking::query()
             ->where('staff_id', $staff->getKey())
             ->where('status', BookingStatus::Pending->value)
             ->whereNotNull('expires_at')
-            ->where('expires_at', '<=', $now)
+            ->where('expires_at', '<=', $now);
+
+        Payment::query()
+            ->whereIn('booking_id', (clone $expiredBookings)->select('id'))
+            ->where('provider', 'demo')
+            ->where('status', PaymentStatus::Pending->value)
             ->update([
-                'status' => BookingStatus::Cancelled->value,
-                'cancelled_at' => $now,
-                'expires_at' => null,
+                'status' => PaymentStatus::Failed->value,
                 'updated_at' => $now,
             ]);
+
+        $expiredBookings->update([
+            'status' => BookingStatus::Cancelled->value,
+            'cancelled_at' => $now,
+            'expires_at' => null,
+            'updated_at' => $now,
+        ]);
     }
 }

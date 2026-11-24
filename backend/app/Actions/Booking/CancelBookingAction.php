@@ -7,6 +7,7 @@ namespace App\Actions\Booking;
 use App\Enums\BookingStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Booking;
+use App\Models\Payment;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -34,6 +35,7 @@ class CancelBookingAction
 
             $paidAmount = (int) $booking->payment()
                 ->where('status', PaymentStatus::Succeeded->value)
+                ->where('provider', '!=', 'demo')
                 ->sum('amount_cents');
 
             $isLateCustomerCancellation = $customerInitiated
@@ -50,6 +52,11 @@ class CancelBookingAction
             $booking->cancelled_at = $now;
             $booking->expires_at = null;
             $booking->save();
+            Payment::query()
+                ->where('booking_id', $booking->getKey())
+                ->where('provider', 'demo')
+                ->where('status', PaymentStatus::Pending->value)
+                ->update(['status' => PaymentStatus::Failed->value, 'updated_at' => $now]);
 
             return [
                 'booking' => $booking,

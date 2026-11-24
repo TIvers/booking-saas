@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Enums\BookingStatus;
+use App\Enums\PaymentStatus;
 use App\Models\Booking;
+use App\Models\Payment;
 use App\Models\Tenant;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -61,6 +63,15 @@ class ReleaseExpiredReservations implements ShouldQueue
                 ) {
                     return;
                 }
+
+                Payment::query()
+                    ->where('booking_id', $booking->getKey())
+                    ->where('provider', 'demo')
+                    ->where('status', PaymentStatus::Pending->value)
+                    ->update([
+                        'status' => PaymentStatus::Failed->value,
+                        'updated_at' => now(),
+                    ]);
 
                 $booking->status = BookingStatus::Cancelled;
                 $booking->cancelled_at = now();

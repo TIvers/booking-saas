@@ -9,6 +9,7 @@ export interface Tenant {
   slug: string
   timezone: string
   currency: string
+  demo_payments_enabled: boolean
 }
 
 export const useTenantStore = defineStore('tenant', () => {

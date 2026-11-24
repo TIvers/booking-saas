@@ -30,6 +30,7 @@ class AuthController
                 'slug' => $tenant->slug,
                 'timezone' => $tenant->timezone,
                 'currency' => $tenant->currency,
+                'demo_payments_enabled' => (bool) config('payments.demo_enabled'),
             ],
         ]);
     }

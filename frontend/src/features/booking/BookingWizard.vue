@@ -2,7 +2,7 @@
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed, onMounted, ref, watch } from 'vue'
 import { api, getApiProblem } from '@/api/client'
-import type { ApiResponse, Booking, Service, Slot, StaffMember } from '@/api/types'
+import type { ApiResponse, Booking, DemoPayment, Service, Slot, StaffMember } from '@/api/types'
 import AuthForm from '@/features/auth/AuthForm.vue'
 import ServicePicker from '@/features/booking/ServicePicker.vue'
 import SlotPicker from '@/features/booking/SlotPicker.vue'
@@ -25,12 +25,16 @@ const staffId = ref<number | null>(null)
 const selectedDate = ref('')
 const selectedSlot = ref<Slot | null>(null)
 const bookingResult = ref<Booking | null>(null)
+const demoPayment = ref<DemoPayment | null>(null)
 const bookingBusy = ref(false)
+const paymentBusy = ref(false)
 const bookingError = ref('')
+const paymentError = ref('')
 const showAuthForm = ref(false)
 
 const timezone = computed(() => tenantStore.tenant?.timezone ?? 'UTC')
 const currency = computed(() => tenantStore.tenant?.currency ?? 'USD')
+const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_enabled ?? false)
 const minimumDate = computed(() => dateInTimezone(timezone.value))
 const selectedService = computed(
   () => services.value.find((service) => service.id === serviceId.value) ?? null,
@@ -102,8 +106,8 @@ function moveBack(): void {
 async function confirmBooking(): Promise<void> {
   if (!selectedService.value || !selectedStaff.value || !selectedSlot.value) return
 
-  if (selectedService.value.deposit_cents > 0) {
-    bookingError.value = 'Для этой услуги нужна предоплата, но онлайн-оплата пока не подключена.'
+  if (selectedService.value.deposit_cents > 0 && !demoPaymentsEnabled.value) {
+    bookingError.value = 'Демо-оплата недоступна для этой организации.'
     return
   }
 
@@ -115,6 +119,8 @@ async function confirmBooking(): Promise<void> {
 
   bookingBusy.value = true
   bookingError.value = ''
+  paymentError.value = ''
+  demoPayment.value = null
 
   try {
     const response = await api.post<ApiResponse<Booking>>('/bookings', {
@@ -123,6 +129,9 @@ async function confirmBooking(): Promise<void> {
       starts_at: selectedSlot.value.starts_at,
     })
     bookingResult.value = response.data.data
+    if (selectedService.value.deposit_cents > 0) {
+      await startDemoPayment()
+    }
     await queryClient.invalidateQueries({
       queryKey: ['slots', serviceId.value, staffId.value, selectedDate.value],
     })
@@ -146,6 +155,46 @@ async function confirmBooking(): Promise<void> {
   }
 }
 
+async function startDemoPayment(): Promise<void> {
+  if (!bookingResult.value) return
+
+  paymentBusy.value = true
+  paymentError.value = ''
+
+  try {
+    const response = await api.post<ApiResponse<DemoPayment>>(
+      `/bookings/${bookingResult.value.id}/demo-payment`,
+    )
+    demoPayment.value = response.data.data
+  } catch (error) {
+    paymentError.value = getApiProblem(error, 'Не удалось подготовить демо-оплату.').message
+  } finally {
+    paymentBusy.value = false
+  }
+}
+
+async function completeDemoPayment(outcome: 'succeeded' | 'failed'): Promise<void> {
+  if (!bookingResult.value) return
+
+  paymentBusy.value = true
+  paymentError.value = ''
+
+  try {
+    const response = await api.post<
+      ApiResponse<{ payment: DemoPayment; booking: Booking }>
+    >(`/bookings/${bookingResult.value.id}/demo-payment/result`, { outcome })
+    demoPayment.value = response.data.data.payment
+    bookingResult.value = response.data.data.booking
+    await queryClient.invalidateQueries({
+      queryKey: ['slots', serviceId.value, staffId.value, selectedDate.value],
+    })
+  } catch (error) {
+    paymentError.value = getApiProblem(error, 'Не удалось обработать демо-оплату.').message
+  } finally {
+    paymentBusy.value = false
+  }
+}
+
 async function onAuthenticated(): Promise<void> {
   showAuthForm.value = false
   await confirmBooking()
@@ -153,7 +202,9 @@ async function onAuthenticated(): Promise<void> {
 
 function startAnotherBooking(): void {
   bookingResult.value = null
+  demoPayment.value = null
   bookingError.value = ''
+  paymentError.value = ''
   showAuthForm.value = false
   serviceId.value = null
   staffId.value = null
@@ -189,6 +240,101 @@ onMounted(loadCatalog)
       <p>{{ catalogError }}</p>
       <button type="button" class="link-button" @click="loadCatalog">Повторить загрузку</button>
     </div>
+
+    <section v-else-if="bookingResult && selectedService && selectedService.deposit_cents > 0" class="booking-card booking-success">
+      <template v-if="!demoPayment">
+        <div class="booking-success__icon" aria-hidden="true">…</div>
+        <p class="eyebrow">ДЕМО-ОПЛАТА</p>
+        <h2>Предоплата</h2>
+        <p class="booking-success__lead">
+          {{ selectedService.name }} · {{ selectedStaff?.display_name }}
+        </p>
+        <p class="booking-success__time">
+          {{ formatMoney(selectedService.deposit_cents, currency) }}
+        </p>
+        <p class="booking-success__note">
+          Это демонстрационный режим: реальные деньги не списываются. Запись удерживается до
+          {{ bookingResult.expires_at ? formatSlotDateTime(bookingResult.expires_at, timezone) : 'истечения резерва' }}.
+        </p>
+        <p v-if="paymentError" class="inline-error" role="alert">{{ paymentError }}</p>
+        <button
+          v-if="!paymentBusy && !bookingBusy"
+          type="button"
+          class="primary-button"
+          @click="startDemoPayment"
+        >
+          Подготовить демо-оплату
+        </button>
+        <p v-else role="status">
+          {{ bookingBusy ? 'Создаём резерв…' : 'Подготавливаем демо-оплату…' }}
+        </p>
+      </template>
+
+      <template v-else-if="demoPayment.status === 'pending'">
+        <div class="booking-success__icon" aria-hidden="true">₽</div>
+        <p class="eyebrow">ДЕМО-РЕЖИМ</p>
+        <h2>Проверьте оплату</h2>
+        <p class="booking-success__lead">
+          {{ selectedService.name }} · {{ selectedStaff?.display_name }}
+        </p>
+        <p class="booking-success__time">
+          {{ formatMoney(demoPayment.amount_cents, demoPayment.currency) }}
+        </p>
+        <p class="booking-success__note">
+          Нажмите один из вариантов для теста. Это не настоящая платёжная операция.
+        </p>
+        <p v-if="paymentError" class="inline-error" role="alert">{{ paymentError }}</p>
+        <div class="wizard-actions wizard-actions--right">
+          <button
+            type="button"
+            class="secondary-button"
+            :disabled="paymentBusy"
+            @click="completeDemoPayment('failed')"
+          >
+            Смоделировать отказ
+          </button>
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="paymentBusy"
+            @click="completeDemoPayment('succeeded')"
+          >
+            {{ paymentBusy ? 'Обрабатываем…' : 'Симулировать оплату' }}
+          </button>
+        </div>
+      </template>
+
+      <template v-else-if="demoPayment.status === 'succeeded'">
+        <div class="booking-success__icon" aria-hidden="true">✓</div>
+        <p class="eyebrow">ДЕМО-ОПЛАТА УСПЕШНА</p>
+        <h2>Вы записаны</h2>
+        <p class="booking-success__lead">
+          {{ selectedService.name }} · {{ selectedStaff?.display_name }}
+        </p>
+        <p class="booking-success__time">
+          {{ formatSlotDateTime(bookingResult.starts_at, timezone) }}
+        </p>
+        <p class="booking-success__note">
+          Предоплата {{ formatMoney(demoPayment.amount_cents, demoPayment.currency) }} отмечена как тестовая.
+          Реальные деньги не списывались. Запись сохранена для аккаунта {{ authStore.user?.email }}.
+        </p>
+        <button type="button" class="primary-button" @click="startAnotherBooking">
+          Записаться ещё
+        </button>
+      </template>
+
+      <template v-else>
+        <div class="booking-success__icon" aria-hidden="true">!</div>
+        <p class="eyebrow">ДЕМО-ОПЛАТА</p>
+        <h2>Оплата не прошла</h2>
+        <p class="booking-success__note">
+          Запись отменена, деньги не списывались. Вы можете выбрать другое время и попробовать снова.
+        </p>
+        <button type="button" class="primary-button" @click="startAnotherBooking">
+          Выбрать другое время
+        </button>
+      </template>
+    </section>
 
     <section v-else-if="bookingResult" class="booking-card booking-success">
       <div class="booking-success__icon" aria-hidden="true">✓</div>
@@ -237,6 +383,7 @@ onMounted(loadCatalog)
             :model-value="serviceId"
             :services="services"
             :currency="currency"
+            :demo-payments-enabled="demoPaymentsEnabled"
             @update:model-value="chooseService"
           />
           <div class="wizard-actions wizard-actions--right">
@@ -319,6 +466,10 @@ onMounted(loadCatalog)
               <dt>Стоимость</dt>
               <dd>{{ formatMoney(selectedService?.price_cents ?? 0, currency) }}</dd>
             </div>
+            <div v-if="(selectedService?.deposit_cents ?? 0) > 0">
+              <dt>Демо-предоплата</dt>
+              <dd>{{ formatMoney(selectedService?.deposit_cents ?? 0, currency) }}</dd>
+            </div>
           </dl>
 
           <p v-if="bookingError" class="inline-error" role="alert">{{ bookingError }}</p>
@@ -344,10 +495,14 @@ onMounted(loadCatalog)
               v-if="authStore.isAuthenticated"
               type="button"
               class="primary-button"
-              :disabled="bookingBusy"
+              :disabled="bookingBusy || paymentBusy"
               @click="confirmBooking"
             >
-              {{ bookingBusy ? 'Создаём запись…' : 'Подтвердить запись' }}
+              {{
+                bookingBusy
+                  ? 'Создаём запись…'
+                  : (selectedService?.deposit_cents ?? 0) > 0 ? 'Создать резерв и перейти к демо-оплате' : 'Подтвердить запись'
+              }}
             </button>
             <button
               v-else-if="!showAuthForm"
