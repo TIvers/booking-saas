@@ -37,7 +37,7 @@ it('generates a normal day grid and includes the last slot that fits', function 
 });
 
 it('returns no slots when the working window is shorter than the service', function () {
-    $slots = (new SlotGenerator())->compute(
+    $slots = (new SlotGenerator)->compute(
         date: CarbonImmutable::parse('2026-06-01'),
         timezone: 'Europe/Berlin',
         workRanges: [['09:00', '09:30']],
@@ -114,7 +114,10 @@ it('accounts for the service buffer when checking busy intervals', function () {
         now: CarbonImmutable::parse('2026-05-31 12:00:00', 'UTC'),
     );
 
-    expect(slotStarts($slots))->toBe(['2026-06-01 07:00']);
+    expect(slotStarts($slots))->toBe([
+        '2026-06-01 07:00',
+        '2026-06-01 08:30',
+    ]);
 });
 
 it('filters slots by the minimum lead time', function () {
@@ -152,7 +155,7 @@ it('converts a local slot to UTC on a daylight-saving day', function () {
 });
 
 it('rejects invalid duration and negative buffer values', function () {
-    $generator = new SlotGenerator();
+    $generator = new SlotGenerator;
     $arguments = [
         'date' => CarbonImmutable::parse('2026-06-01'),
         'timezone' => 'Europe/Berlin',
