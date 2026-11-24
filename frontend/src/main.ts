@@ -1,1 +1,20 @@
-// ОПИСАНИЕ ФАЙЛА: точка входа SPA. Создаёт приложение, подключает Pinia, Router, TanStack Query и инициализирует Echo (Reverb).
+import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
+import { createPinia } from 'pinia'
+import { createApp } from 'vue'
+import App from './App.vue'
+import { router } from './router'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+})
+
+createApp(App)
+  .use(createPinia())
+  .use(router)
+  .use(VueQueryPlugin, { queryClient })
+  .mount('#app')

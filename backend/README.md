@@ -14,6 +14,11 @@ Initial endpoints:
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
 
+`GET /api/v1/tenant` includes the tenant's ISO 4217 `currency` code. The
+database defaults existing and new tenants to `USD`; update `tenants.currency`
+to configure a different currency. Service prices are stored in hundredths of
+the configured currency.
+
 ## Catalog and schedules
 
 Tenant-scoped read endpoints expose locations, active services, and active

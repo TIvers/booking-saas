@@ -29,6 +29,7 @@ class AuthController
                 'name' => $tenant->name,
                 'slug' => $tenant->slug,
                 'timezone' => $tenant->timezone,
+                'currency' => $tenant->currency,
             ],
         ]);
     }
@@ -154,6 +155,7 @@ class AuthController
                 'name' => $tenant->name,
                 'slug' => $tenant->slug,
                 'timezone' => $tenant->timezone,
+                'currency' => $tenant->currency,
             ],
             'role' => $role instanceof Role ? $role->value : $role,
         ];

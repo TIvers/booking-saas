@@ -13,6 +13,7 @@ class Tenant extends Model
         'name',
         'slug',
         'timezone',
+        'currency',
         'settings',
     ];
 

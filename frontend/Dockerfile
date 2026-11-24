@@ -1,5 +1,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
+ARG VITE_TENANT_ID
+ENV VITE_TENANT_ID=${VITE_TENANT_ID}
 COPY package*.json ./
 RUN npm ci
 COPY . .

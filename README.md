@@ -21,6 +21,8 @@ docker compose up -d
 
 ```bash
 cd frontend
+cp .env.example .env.local
+# Set VITE_TENANT_ID to the numeric tenant ID for the booking site.
 npm install
 npm run dev
 ```
@@ -39,6 +41,7 @@ npm run dev
 4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `DB_APP_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`.
    `POSTGRES_PASSWORD` используется привилегированной ролью для миграций, а приложение подключается ограниченной ролью `booking_app`.
    Создайте `DB_APP_PASSWORD` как URL-safe пароль длиной не менее 32 символов, например локально командой `openssl rand -hex 32`, и сохраните только в GitHub Secrets.
+   Также задайте GitHub Actions repository variable `VITE_TENANT_ID` с числовым ID организации, которую показывает публичная страница записи.
 5. На сервере из checkout репозитория установите конфиг host Nginx:
 
    ```bash
