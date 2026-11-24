@@ -9,10 +9,13 @@ use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServiceController;
 use App\Http\Controllers\Api\V1\SlotController;
 use App\Http\Controllers\Api\V1\StaffController;
+use App\Http\Controllers\Api\V1\TenantOnboardingController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
     ->group(function (): void {
+        Route::post('/onboarding', [TenantOnboardingController::class, 'store'])
+            ->middleware('throttle:3,1');
         Route::get('/tenant', [AuthController::class, 'tenant']);
         Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:6,1');
         Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:6,1');

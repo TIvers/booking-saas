@@ -49,18 +49,12 @@ jobs:
         env:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           DB_APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
-          VITE_TENANT_ID: ${{ vars.VITE_TENANT_ID }}
         run: |
           set -euo pipefail
           : "${POSTGRES_PASSWORD:?Add the POSTGRES_PASSWORD repository secret}"
           : "${DB_APP_PASSWORD:?Add the DB_APP_PASSWORD repository secret}"
-          : "${VITE_TENANT_ID:?Add the VITE_TENANT_ID repository variable with the public tenant ID}"
-          if [[ ! "$VITE_TENANT_ID" =~ ^[1-9][0-9]*$ ]]; then
-            echo "VITE_TENANT_ID must be a positive numeric tenant ID" >&2
-            exit 1
-          fi
-          printf 'POSTGRES_DB=booking\nPOSTGRES_USER=booking\nPOSTGRES_PASSWORD=%s\nDB_APP_PASSWORD=%s\nVITE_TENANT_ID=%s\n' \
-            "$POSTGRES_PASSWORD" "$DB_APP_PASSWORD" "$VITE_TENANT_ID" > .env
+          printf 'POSTGRES_DB=booking\nPOSTGRES_USER=booking\nPOSTGRES_PASSWORD=%s\nDB_APP_PASSWORD=%s\n' \
+            "$POSTGRES_PASSWORD" "$DB_APP_PASSWORD" > .env
 
       - name: Validate demo owner credentials
         shell: bash

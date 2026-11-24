@@ -44,6 +44,14 @@ class DemoTenantSeeder extends Seeder
                 [(string) $tenant->getKey()],
             );
             app()->instance('currentTenant', $tenant);
+            DB::table('tenant_slug_directory')->updateOrInsert(
+                ['tenant_id' => $tenant->getKey()],
+                [
+                    'slug' => $tenant->slug,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+            );
             $this->provisionOwner();
 
             $location = Location::query()->firstOrCreate(

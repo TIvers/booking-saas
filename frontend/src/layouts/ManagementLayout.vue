@@ -17,12 +17,12 @@ const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_ena
     </header>
 
     <nav class="management-nav" aria-label="Разделы кабинета">
-      <RouterLink :to="{ name: 'manage-dashboard' }">Обзор</RouterLink>
-      <RouterLink :to="{ name: 'manage-calendar' }">Календарь</RouterLink>
-      <RouterLink :to="{ name: 'manage-bookings' }">Записи</RouterLink>
-      <RouterLink :to="{ name: 'manage-schedule' }">Расписание</RouterLink>
-      <RouterLink :to="{ name: 'manage-services' }">Услуги</RouterLink>
-      <RouterLink :to="{ name: 'manage-staff' }">Команда</RouterLink>
+      <RouterLink :to="{ name: 'manage-dashboard', params: { tenantSlug: tenantStore.slug ?? '' } }">Обзор</RouterLink>
+      <RouterLink :to="{ name: 'manage-calendar', params: { tenantSlug: tenantStore.slug ?? '' } }">Календарь</RouterLink>
+      <RouterLink :to="{ name: 'manage-bookings', params: { tenantSlug: tenantStore.slug ?? '' } }">Записи</RouterLink>
+      <RouterLink :to="{ name: 'manage-schedule', params: { tenantSlug: tenantStore.slug ?? '' } }">Расписание</RouterLink>
+      <RouterLink :to="{ name: 'manage-services', params: { tenantSlug: tenantStore.slug ?? '' } }">Услуги</RouterLink>
+      <RouterLink :to="{ name: 'manage-staff', params: { tenantSlug: tenantStore.slug ?? '' } }">Команда</RouterLink>
     </nav>
 
     <p v-if="demoPaymentsEnabled" class="demo-payment-notice" role="note">

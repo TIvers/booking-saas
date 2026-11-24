@@ -142,7 +142,10 @@ onMounted(load)
     </div>
 
     <p v-if="meta && meta.total > bookings.length" class="calendar-warning">
-      За неделю больше 100 записей. Откройте <RouterLink :to="{ name: 'manage-bookings' }">список</RouterLink>
+      За неделю больше 100 записей. Откройте
+      <RouterLink :to="{ name: 'manage-bookings', params: { tenantSlug: tenant.slug ?? '' } }">
+        список
+      </RouterLink>
       для просмотра всех.
     </p>
 

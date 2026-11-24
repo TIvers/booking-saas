@@ -14,10 +14,8 @@ class SetPostgresTenantContext
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $tenantId = $request->header('X-Tenant');
-
-        if (! is_string($tenantId) || ! ctype_digit($tenantId) || (int) $tenantId < 1) {
-            return response()->json(['message' => 'A valid X-Tenant header is required.'], 400);
+        if ($request->is('api/v1/onboarding')) {
+            return $next($request);
         }
 
         $connection = DB::connection();
@@ -25,10 +23,19 @@ class SetPostgresTenantContext
         $connection->beginTransaction();
 
         try {
+            $tenantId = $this->resolveTenantId($request);
+
+            if ($tenantId === null) {
+                $connection->rollBack();
+
+                return response()->json(['message' => 'The requested organization was not found.'], 404);
+            }
+
             $connection->select(
                 "select set_config('app.tenant_id', ?, true)",
-                [(string) (int) $tenantId],
+                [(string) $tenantId],
             );
+            $request->attributes->set('tenant_id', $tenantId);
 
             $response = $next($request);
 
@@ -48,5 +55,30 @@ class SetPostgresTenantContext
         } finally {
             app()->forgetInstance('currentTenant');
         }
+    }
+
+    private function resolveTenantId(Request $request): ?int
+    {
+        $tenantId = $request->header('X-Tenant');
+
+        if (is_string($tenantId) && ctype_digit($tenantId) && (int) $tenantId > 0) {
+            return (int) $tenantId;
+        }
+
+        if ($tenantId !== null) {
+            abort(400, 'A valid tenant identifier is required.');
+        }
+
+        $slug = $request->header('X-Tenant-Slug');
+
+        if (! is_string($slug) || preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/D', $slug) !== 1) {
+            abort(400, 'A valid X-Tenant-Slug header is required.');
+        }
+
+        $tenantId = DB::table('tenant_slug_directory')
+            ->where('slug', $slug)
+            ->value('tenant_id');
+
+        return $tenantId === null ? null : (int) $tenantId;
     }
 }

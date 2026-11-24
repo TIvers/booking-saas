@@ -7,15 +7,24 @@ const route = useRoute()
 const router = useRouter()
 const isManagementRedirect = computed(() => {
   const redirect = route.query.redirect
-  return typeof redirect === 'string' && redirect.startsWith('/manage')
+  const tenantSlug = route.params.tenantSlug
+  return typeof redirect === 'string'
+    && typeof tenantSlug === 'string'
+    && (
+      redirect === `/t/${tenantSlug}/manage`
+      || redirect.startsWith(`/t/${tenantSlug}/manage/`)
+    )
 })
 
 function afterAuthentication(): void {
   const redirect = route.query.redirect
+  const tenantSlug = route.params.tenantSlug
   const destination =
-    typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+    typeof redirect === 'string'
+      && typeof tenantSlug === 'string'
+      && redirect.startsWith(`/t/${tenantSlug}/`)
       ? redirect
-      : '/'
+      : { name: 'booking', params: { tenantSlug } }
 
   void router.replace(destination)
 }

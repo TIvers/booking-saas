@@ -194,7 +194,9 @@ onMounted(() => {
     <div v-else-if="!bookings.length" class="state-card empty-state">
       <h2>Записей пока нет</h2>
       <p>Выберите услугу и время, чтобы создать первую запись.</p>
-      <RouterLink to="/">Перейти к онлайн-записи</RouterLink>
+      <RouterLink :to="{ name: 'booking', params: { tenantSlug: tenant.slug ?? '' } }">
+        Перейти к онлайн-записи
+      </RouterLink>
     </div>
 
     <div v-else class="booking-list">

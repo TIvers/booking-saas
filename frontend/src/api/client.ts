@@ -1,9 +1,12 @@
 import axios from 'axios'
 
-const tenantId = String(import.meta.env.VITE_TENANT_ID ?? '').trim()
-export const tenantIsConfigured = /^[1-9]\d*$/.test(tenantId)
-export const tenantConfigurationMessage =
-  'Сайт ещё не настроен: укажите числовой VITE_TENANT_ID для организации.'
+let activeTenantSlug = ''
+
+export function setActiveTenantSlug(slug: string | null): void {
+  activeTenantSlug = slug ?? ''
+}
+
+export const tenantConfigurationMessage = 'Сначала откройте страницу организации по её адресу.'
 
 export const api = axios.create({
   baseURL: '/api/v1',
@@ -15,11 +18,15 @@ export const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  if (!tenantIsConfigured) {
+  if (config.url === '/onboarding') {
+    return config
+  }
+
+  if (!activeTenantSlug) {
     return Promise.reject(new Error(tenantConfigurationMessage))
   }
 
-  config.headers['X-Tenant'] = tenantId
+  config.headers['X-Tenant-Slug'] = activeTenantSlug
   return config
 })
 

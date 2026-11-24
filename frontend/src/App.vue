@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { getApiProblem } from '@/api/client'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -9,31 +9,47 @@ import { useTenantStore } from '@/stores/tenant'
 const auth = useAuthStore()
 const tenant = useTenantStore()
 const router = useRouter()
-const ready = ref(false)
+const ready = computed(() => !tenant.loading)
 const authError = ref('')
+const bookingLocation = computed(() =>
+  tenant.slug
+    ? { name: 'booking', params: { tenantSlug: tenant.slug } }
+    : { name: 'home' },
+)
+const loginLocation = computed(() => ({
+  name: 'login',
+  params: { tenantSlug: tenant.slug ?? '' },
+}))
+const bookingsLocation = computed(() => ({
+  name: 'my-bookings',
+  params: { tenantSlug: tenant.slug ?? '' },
+}))
+const managementLocation = computed(() => ({
+  name: 'manage-dashboard',
+  params: { tenantSlug: tenant.slug ?? '' },
+}))
 
 async function logout(): Promise<void> {
   authError.value = ''
 
   try {
     await auth.logout()
-    await router.replace('/')
+    await router.replace({ name: 'home' })
   } catch (error) {
     authError.value = getApiProblem(error, 'Не удалось завершить сеанс.').message
   }
 }
 
-onMounted(async () => {
+async function retryTenant(): Promise<void> {
   await tenant.load()
   if (tenant.tenant) await auth.loadCurrentUser()
-  ready.value = true
-})
+}
 </script>
 
 <template>
   <div class="app-shell">
     <header class="site-header">
-      <RouterLink class="brand" to="/" aria-label="На главную">
+      <RouterLink class="brand" :to="bookingLocation" aria-label="На главную">
         <span class="brand__mark" aria-hidden="true">b</span>
         <span class="brand__text">
           <strong>{{ tenant.tenant?.name ?? 'Онлайн-запись' }}</strong>
@@ -42,13 +58,19 @@ onMounted(async () => {
       </RouterLink>
 
       <nav class="site-nav" aria-label="Главная навигация">
-        <RouterLink to="/">Записаться</RouterLink>
-        <RouterLink v-if="auth.role === 'customer'" to="/my-bookings">Мои записи</RouterLink>
-        <RouterLink v-if="auth.canManageTenant || !auth.isAuthenticated" to="/manage">Кабинет</RouterLink>
-        <RouterLink v-if="!auth.isAuthenticated" to="/login">Войти</RouterLink>
-        <template v-else>
-          <span class="site-nav__user">{{ auth.user?.name }}</span>
-          <BaseButton variant="ghost" @click="logout">Выйти</BaseButton>
+        <template v-if="tenant.tenant">
+          <RouterLink :to="bookingLocation">Записаться</RouterLink>
+          <RouterLink v-if="auth.role === 'customer'" :to="bookingsLocation">
+            Мои записи
+          </RouterLink>
+          <RouterLink v-if="auth.canManageTenant || !auth.isAuthenticated" :to="managementLocation">
+            Кабинет
+          </RouterLink>
+          <RouterLink v-if="!auth.isAuthenticated" :to="loginLocation">Войти</RouterLink>
+          <template v-else>
+            <span class="site-nav__user">{{ auth.user?.name }}</span>
+            <BaseButton variant="ghost" @click="logout">Выйти</BaseButton>
+          </template>
         </template>
       </nav>
     </header>
@@ -60,7 +82,10 @@ onMounted(async () => {
         <p class="eyebrow">НАСТРОЙКА САЙТА</p>
         <h1>Пока не удаётся открыть запись</h1>
         <p>{{ tenant.error }}</p>
-        <BaseButton variant="secondary" @click="tenant.load">Повторить</BaseButton>
+        <BaseButton variant="secondary" @click="retryTenant">Повторить</BaseButton>
+        <RouterLink class="startup-card__home-link" :to="{ name: 'home' }">
+          Вернуться к организациям
+        </RouterLink>
       </section>
 
       <RouterView v-else />
@@ -234,6 +259,14 @@ input:focus-visible {
 
 .startup-card--error > p:not(.eyebrow) {
   margin: 0.55rem 0 1.15rem;
+}
+
+.startup-card__home-link {
+  color: #285447;
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-top: 1rem;
 }
 
 .site-alert {

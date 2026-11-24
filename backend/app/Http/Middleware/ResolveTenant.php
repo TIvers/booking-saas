@@ -13,8 +13,12 @@ class ResolveTenant
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $tenantId = (int) $request->header('X-Tenant');
-        $tenant = Tenant::query()->find($tenantId);
+        if ($request->is('api/v1/onboarding')) {
+            return $next($request);
+        }
+
+        $tenantId = $request->attributes->get('tenant_id');
+        $tenant = is_int($tenantId) ? Tenant::query()->find($tenantId) : null;
 
         if ($tenant === null) {
             return response()->json(['message' => 'Tenant not found.'], 404);

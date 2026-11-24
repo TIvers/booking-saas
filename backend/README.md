@@ -4,10 +4,16 @@
 
 The SPA uses Laravel Sanctum's stateful cookie authentication. Before calling
 the API, the browser must request `/sanctum/csrf-cookie`; tenant-scoped API
-requests send the tenant's numeric ID in the `X-Tenant` header.
+requests send the organization's slug in the `X-Tenant-Slug` header. The
+`POST /api/v1/onboarding` endpoint creates an organization and its owner before
+a tenant context exists. Numeric `X-Tenant` remains supported for existing
+integrations.
 
 Initial endpoints:
 
+- `POST /api/v1/onboarding` creates a tenant and its owner account from
+  `organization_name`, `slug`, `timezone`, `currency`, `owner_name`, `email`,
+  `password`, and `password_confirmation`.
 - `GET /api/v1/tenant`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`

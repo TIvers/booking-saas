@@ -29,6 +29,12 @@ final class TenantFixtures
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('tenant_slug_directory')->insert([
+            'tenant_id' => $id,
+            'slug' => $slug,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         return Tenant::query()->findOrFail($id);
     }

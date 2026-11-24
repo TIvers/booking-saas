@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api, getApiProblem, tenantConfigurationMessage, tenantIsConfigured } from '@/api/client'
+import { api, getApiProblem, setActiveTenantSlug } from '@/api/client'
 import type { ApiResponse } from '@/api/types'
 
 export interface Tenant {
@@ -16,16 +16,36 @@ export const useTenantStore = defineStore('tenant', () => {
   const tenant = ref<Tenant | null>(null)
   const loading = ref(true)
   const error = ref('')
+  const slug = ref<string | null>(null)
+
+  function setSlug(value: string | null): boolean {
+    const nextSlug = value || null
+    const changed = slug.value !== nextSlug
+
+    if (changed) {
+      tenant.value = null
+      error.value = ''
+      loading.value = Boolean(nextSlug)
+    }
+
+    slug.value = nextSlug
+    setActiveTenantSlug(nextSlug)
+
+    if (!nextSlug) loading.value = false
+
+    return changed
+  }
 
   async function load(): Promise<void> {
-    loading.value = true
-    error.value = ''
-
-    if (!tenantIsConfigured) {
-      error.value = tenantConfigurationMessage
+    if (!slug.value) {
+      tenant.value = null
+      error.value = ''
       loading.value = false
       return
     }
+
+    loading.value = true
+    error.value = ''
 
     try {
       const response = await api.get<ApiResponse<Tenant>>('/tenant')
@@ -37,5 +57,5 @@ export const useTenantStore = defineStore('tenant', () => {
     }
   }
 
-  return { tenant, loading, error, load }
+  return { tenant, loading, error, slug, setSlug, load }
 })

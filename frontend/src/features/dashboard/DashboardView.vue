@@ -38,7 +38,12 @@ onMounted(load)
         </p>
         <p v-else>Записи и активность организации</p>
       </div>
-      <RouterLink class="text-link" :to="{ name: 'manage-bookings' }">Все записи</RouterLink>
+      <RouterLink
+        class="text-link"
+        :to="{ name: 'manage-bookings', params: { tenantSlug: tenant.slug ?? '' } }"
+      >
+        Все записи
+      </RouterLink>
     </div>
 
     <div v-if="loading" class="state-card" role="status">Загружаем сводку…</div>
@@ -78,7 +83,12 @@ onMounted(load)
               <p class="eyebrow">БЛИЖАЙШИЕ</p>
               <h3>Предстоящие записи</h3>
             </div>
-            <RouterLink class="text-link" :to="{ name: 'manage-calendar' }">Календарь</RouterLink>
+            <RouterLink
+              class="text-link"
+              :to="{ name: 'manage-calendar', params: { tenantSlug: tenant.slug ?? '' } }"
+            >
+              Календарь
+            </RouterLink>
           </header>
 
           <div v-if="!data.upcoming.length" class="empty-state">

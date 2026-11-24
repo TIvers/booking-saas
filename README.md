@@ -22,10 +22,13 @@ docker compose up -d
 ```bash
 cd frontend
 cp .env.example .env.local
-# Set VITE_TENANT_ID to the numeric tenant ID for the booking site.
 npm install
 npm run dev
 ```
+
+Откройте `/`, чтобы перейти к существующей организации по адресу или создать
+новую. Страница записи организации доступна по адресу `/t/{slug}`; для демо
+после заполнения каталога используется `/t/studio-oliva`.
 
 Демо-предоплата включена параметром `PAYMENTS_DEMO_ENABLED=true` в backend
 окружении. Она позволяет подтвердить или отклонить тестовую оплату, но не
@@ -49,20 +52,9 @@ npm run dev
    `POSTGRES_PASSWORD` используется привилегированной ролью для миграций, а приложение подключается ограниченной ролью `booking_app`.
    Создайте `DB_APP_PASSWORD` как URL-safe пароль длиной не менее 32 символов, например локально командой `openssl rand -hex 32`, и сохраните только в GitHub Secrets.
    `DEMO_OWNER_EMAIL` и `DEMO_OWNER_PASSWORD` задают вход владельца демо-организации; пароль должен быть длиной не менее 12 символов (его можно сгенерировать `openssl rand -hex 32`). Не передавайте пароль в чат и не сохраняйте его в файлах репозитория.
-   Перед первой выкладкой создайте строку организации, чтобы получить числовой ID:
-
-   ```bash
-   sudo docker exec -it booking-saas-postgres-1 psql -U booking -d booking \
-     -c "INSERT INTO tenants (name, slug, timezone, created_at, updated_at)
-         VALUES ('Студия Олива', 'studio-oliva', 'Europe/Moscow', NOW(), NOW())
-         ON CONFLICT (slug) DO NOTHING
-         RETURNING id;"
-   ```
-
-   Если строка уже была создана, получите её ID запросом
-   `SELECT id FROM tenants WHERE slug = 'studio-oliva';`.
-   Задайте этот ID как GitHub Actions repository variable `VITE_TENANT_ID`.
-   После миграций workflow идемпотентно заполнит демо-каталог и расписание.
+   После миграций workflow идемпотентно создаст демо-организацию `studio-oliva`
+   и заполнит её каталог. Другие организации можно подключать через форму на
+   главной странице сайта; их страницы записи будут доступны по `/t/{slug}`.
 5. На сервере из checkout репозитория установите конфиг host Nginx:
 
    ```bash

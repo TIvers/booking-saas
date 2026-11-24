@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useTenantStore } from '@/stores/tenant'
 import BookingWizard from '@/features/booking/BookingWizard.vue'
 import BookingsCalendar from '@/features/bookings/BookingsCalendar.vue'
 import BookingsList from '@/features/bookings/BookingsList.vue'
@@ -10,28 +11,34 @@ import ManagementLayout from '@/layouts/ManagementLayout.vue'
 import ServicesManager from '@/features/services/ServicesManager.vue'
 import StaffManager from '@/features/staff/StaffManager.vue'
 import LoginView from '@/views/LoginView.vue'
+import TenantLandingView from '@/views/TenantLandingView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
       path: '/',
+      name: 'home',
+      component: TenantLandingView,
+    },
+    {
+      path: '/t/:tenantSlug',
       name: 'booking',
       component: BookingWizard,
     },
     {
-      path: '/login',
+      path: '/t/:tenantSlug/login',
       name: 'login',
       component: LoginView,
     },
     {
-      path: '/my-bookings',
+      path: '/t/:tenantSlug/my-bookings',
       name: 'my-bookings',
       component: MyBookingsView,
       meta: { requiresCustomer: true },
     },
     {
-      path: '/manage',
+      path: '/t/:tenantSlug/manage',
       component: ManagementLayout,
       meta: { requiresManager: true },
       children: [
@@ -78,18 +85,42 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   const requiresManager = to.matched.some((record) => record.meta.requiresManager)
   const requiresCustomer = to.matched.some((record) => record.meta.requiresCustomer)
-  if (!requiresManager && !requiresCustomer) return true
-
+  const tenantSlug = typeof to.params.tenantSlug === 'string' ? to.params.tenantSlug : null
+  const tenant = useTenantStore()
   const auth = useAuthStore()
-  await auth.loadCurrentUser()
+  const tenantChanged = tenant.setSlug(tenantSlug)
 
-  if (!auth.isAuthenticated) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+  if (tenantSlug && (tenantChanged || !tenant.tenant)) {
+    await tenant.load()
   }
 
-  if (requiresManager && !auth.canManageTenant) return { name: 'booking' }
+  if (!tenantSlug) {
+    await auth.loadCurrentUser()
+    return true
+  }
+
+  if (!tenant.tenant) {
+    auth.reset()
+    return true
+  }
+
+  await auth.loadCurrentUser()
+  if (!requiresManager && !requiresCustomer) return true
+  if (!auth.isAuthenticated) {
+    return {
+      name: 'login',
+      params: { tenantSlug },
+      query: { redirect: to.fullPath },
+    }
+  }
+
+  if (requiresManager && !auth.canManageTenant) {
+    return { name: 'booking', params: { tenantSlug } }
+  }
   if (requiresCustomer && auth.role !== 'customer') {
-    return { name: auth.canManageTenant ? 'manage-dashboard' : 'booking' }
+    return auth.canManageTenant
+      ? { name: 'manage-dashboard', params: { tenantSlug } }
+      : { name: 'booking', params: { tenantSlug } }
   }
 
   return true

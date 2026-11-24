@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { api, ensureCsrfCookie, getApiProblem, tenantIsConfigured } from '@/api/client'
+import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
+import { useTenantStore } from '@/stores/tenant'
 import type { TenantRole } from '@/api/types'
 
 export interface AuthUser {
@@ -22,6 +23,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null)
   const role = ref<TenantRole | null>(null)
   const initialized = ref(false)
+  let initializedTenantSlug: string | null = null
   const isAuthenticated = computed(() => user.value !== null)
   const canManageTenant = computed(() => role.value === 'owner' || role.value === 'manager')
 
@@ -35,10 +37,22 @@ export const useAuthStore = defineStore('auth', () => {
     role.value = null
   }
 
-  async function loadCurrentUser(): Promise<void> {
-    if (initialized.value) return
+  function reset(): void {
+    clear()
+    initialized.value = false
+    initializedTenantSlug = null
+  }
 
-    if (!tenantIsConfigured) {
+  async function loadCurrentUser(): Promise<void> {
+    const slug = useTenantStore().slug
+
+    if (initialized.value && initializedTenantSlug === slug) return
+
+    initialized.value = false
+    initializedTenantSlug = slug
+    clear()
+
+    if (!slug) {
       initialized.value = true
       return
     }
@@ -66,6 +80,8 @@ export const useAuthStore = defineStore('auth', () => {
     await ensureCsrfCookie()
     const response = await api.post<ApiResponse<AuthPayload>>('/auth/login', credentials)
     setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
   }
 
   async function register(credentials: {
@@ -77,6 +93,8 @@ export const useAuthStore = defineStore('auth', () => {
     await ensureCsrfCookie()
     const response = await api.post<ApiResponse<AuthPayload>>('/auth/register', credentials)
     setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
   }
 
   async function logout(): Promise<void> {
@@ -91,6 +109,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     canManageTenant,
     clear,
+    reset,
     loadCurrentUser,
     login,
     register,
