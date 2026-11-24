@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BookingController;
 use App\Http\Controllers\Api\V1\LocationController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServiceController;
+use App\Http\Controllers\Api\V1\SlotController;
 use App\Http\Controllers\Api\V1\StaffController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,6 +24,7 @@ Route::prefix('v1')
         Route::get('/services/{service}', [ServiceController::class, 'show']);
         Route::get('/staff', [StaffController::class, 'index']);
         Route::get('/staff/{staff}', [StaffController::class, 'show']);
+        Route::get('/slots', [SlotController::class, 'index']);
 
         Route::middleware(['auth:sanctum', 'tenant.member', 'tenant.manager'])->group(function (): void {
             Route::get('/manage/services', [ServiceController::class, 'manageIndex']);
@@ -42,5 +45,15 @@ Route::prefix('v1')
             Route::put('/staff/{staff}/schedule', [ScheduleController::class, 'update']);
             Route::put('/staff/{staff}/schedule/exceptions/{date}', [ScheduleController::class, 'updateException']);
             Route::delete('/staff/{staff}/schedule/exceptions/{date}', [ScheduleController::class, 'destroyException']);
+
+            Route::post('/bookings/{booking}/confirm', [BookingController::class, 'confirm']);
+        });
+
+        Route::middleware(['auth:sanctum', 'tenant.member'])->group(function (): void {
+            Route::get('/bookings', [BookingController::class, 'index']);
+            Route::post('/bookings', [BookingController::class, 'store']);
+            Route::get('/bookings/{booking}', [BookingController::class, 'show']);
+            Route::post('/bookings/{booking}/cancel', [BookingController::class, 'cancel']);
+            Route::post('/bookings/{booking}/reschedule', [BookingController::class, 'reschedule']);
         });
     });

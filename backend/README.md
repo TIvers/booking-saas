@@ -32,6 +32,34 @@ ISO numbering (Monday 1 through Sunday 7), and times are local to the staff
 member's location in `HH:MM` format. Each break must fit within a work range
 for the same day.
 
+## Booking API
+
+- `GET /api/v1/slots?staff_id={id}&service_id={id}&date=YYYY-MM-DD` returns
+  available intervals in UTC. The date is interpreted in the location timezone.
+- Authenticated tenant members can create bookings with
+  `POST /api/v1/bookings` using `staff_id`, `service_id`, and an ISO-8601
+  `starts_at` copied from an available slot.
+- Services without a deposit are confirmed immediately. A service with a deposit
+  creates a pending reservation for `BOOKING_RESERVATION_TTL_MINUTES`; a tenant
+  manager can confirm it through `POST /api/v1/bookings/{id}/confirm`.
+- `GET /api/v1/bookings` lists the caller's bookings (or all tenant bookings for
+  an owner/manager); `GET /api/v1/bookings/{id}` applies the same ownership
+  rules. Customers can cancel or reschedule only their own bookings. Owners and
+  managers can manage bookings across the tenant.
+- `POST /api/v1/bookings/{id}/cancel` returns the retained deposit and amount
+  due for refund. Customer cancellations are free until
+  `BOOKING_FREE_CANCELLATION_HOURS` before the appointment; late cancellations
+  may retain the paid deposit. This stage calculates the refund amount but does
+  not call a payment provider.
+- `POST /api/v1/bookings/{id}/reschedule` accepts a new ISO-8601 `starts_at`.
+  The old interval remains booked unless the new slot is accepted.
+
+Overlapping reservations are rejected by PostgreSQL's exclusion constraint and
+returned as HTTP 409. Deposit reservations enqueue a delayed, tenant-scoped job
+to release them at expiry; booking attempts also clean up expired reservations
+for that staff member, so a delayed queue worker cannot indefinitely hold a
+slot.
+
 Tenant middleware starts a database transaction, sets
 `app.tenant_id` transaction-locally, and resolves the tenant before handling
 the request. Eloquent tenant scopes provide an additional application-level

@@ -47,6 +47,7 @@ final class SlotGenerator
         Service $service,
         CarbonImmutable $date,
         ?CarbonImmutable $now = null,
+        ?int $excludeBookingId = null,
     ): array {
         $timezone = $staff->location->timezone;
         $now ??= CarbonImmutable::now('UTC');
@@ -73,6 +74,7 @@ final class SlotGenerator
         $busy = Booking::query()
             ->active()
             ->where('staff_id', $staff->id)
+            ->when($excludeBookingId !== null, fn ($query) => $query->where('bookings.id', '<>', $excludeBookingId))
             ->where('starts_at', '<', $localEnd->utc())
             ->where('ends_at', '>', $localStart->utc())
             ->get(['starts_at', 'ends_at'])

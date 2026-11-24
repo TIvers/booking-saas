@@ -39,10 +39,16 @@ class Booking extends Model
 
     public function scopeActive(Builder $query): Builder
     {
-        return $query->whereIn('status', [
-            BookingStatus::Pending->value,
-            BookingStatus::Confirmed->value,
-        ]);
+        return $query->where(function (Builder $query): void {
+            $query->where('status', BookingStatus::Confirmed->value)
+                ->orWhere(function (Builder $query): void {
+                    $query->where('status', BookingStatus::Pending->value)
+                        ->where(function (Builder $query): void {
+                            $query->whereNull('expires_at')
+                                ->orWhere('expires_at', '>', now());
+                        });
+                });
+        });
     }
 
     public function staff(): BelongsTo
