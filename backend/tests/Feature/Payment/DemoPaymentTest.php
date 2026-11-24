@@ -183,5 +183,5 @@ it('marks an abandoned demo payment failed when its reservation expires', functi
     expect(Booking::query()->findOrFail($booking['id'])->status)
         ->toBe(BookingStatus::Cancelled);
     expect(Payment::query()->where('booking_id', $booking['id'])->value('status'))
-        ->toBe(PaymentStatus::Failed->value);
+        ->toBe(PaymentStatus::Failed);
 });
