@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Role;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Tests\Support\TenantFixtures;
 
@@ -23,7 +24,7 @@ it('registers a customer inside the selected tenant', function () {
 
     $response->assertCreated()
         ->assertJsonPath('data.user.email', 'customer@example.test')
-    ->assertJsonPath('data.user.username', 'test-customer')
+        ->assertJsonPath('data.user.username', 'test-customer')
         ->assertJsonPath('data.role', 'customer');
 });
 

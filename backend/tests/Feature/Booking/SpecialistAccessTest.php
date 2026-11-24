@@ -92,6 +92,13 @@ it('limits specialists to their own bookings and gives them read-only schedule a
         ->assertOk()
         ->assertJsonPath('data.role', 'staff');
 
+    TenantFixtures::activate($tenant);
+    $specialist = Membership::query()
+        ->where('username', $specialistCredentials['username'])
+        ->firstOrFail()
+        ->user;
+    $this->actingAs($specialist);
+
     $this->withHeaders($headers)
         ->getJson('/api/v1/bookings')
         ->assertOk()
