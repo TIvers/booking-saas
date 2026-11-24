@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthForm from '@/features/auth/AuthForm.vue'
 
 const route = useRoute()
 const router = useRouter()
+const isManagementRedirect = computed(() => {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' && redirect.startsWith('/manage')
+})
 
 function afterAuthentication(): void {
   const redirect = route.query.redirect
@@ -20,10 +25,13 @@ function afterAuthentication(): void {
   <section class="login-view">
     <div class="login-view__intro">
       <p class="eyebrow">АККАУНТ</p>
-      <h1>Войдите или зарегистрируйтесь</h1>
+      <h1>{{ isManagementRedirect ? 'Вход в кабинет бизнеса' : 'Войдите или зарегистрируйтесь' }}</h1>
       <p>Аккаунт нужен, чтобы сохранить запись и управлять ею.</p>
     </div>
-    <AuthForm @authenticated="afterAuthentication" />
+    <AuthForm
+      :initial-mode="isManagementRedirect ? 'login' : 'register'"
+      @authenticated="afterAuthentication"
+    />
   </section>
 </template>
 

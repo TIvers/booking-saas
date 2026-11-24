@@ -20,4 +20,9 @@ return [
 
     // Бесплатная отмена возможна не позже чем за столько часов до начала.
     'free_cancellation_hours' => (int) env('BOOKING_FREE_CANCELLATION_HOURS', 24),
+
+    'demo_owner' => [
+        'email' => env('DEMO_OWNER_EMAIL'),
+        'password' => env('DEMO_OWNER_PASSWORD'),
+    ],
 ];

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { RouterLink, RouterView } from 'vue-router'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { getApiProblem } from '@/api/client'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -8,6 +8,7 @@ import { useTenantStore } from '@/stores/tenant'
 
 const auth = useAuthStore()
 const tenant = useTenantStore()
+const router = useRouter()
 const ready = ref(false)
 const authError = ref('')
 
@@ -16,6 +17,7 @@ async function logout(): Promise<void> {
 
   try {
     await auth.logout()
+    await router.replace('/')
   } catch (error) {
     authError.value = getApiProblem(error, 'Не удалось завершить сеанс.').message
   }
@@ -41,6 +43,7 @@ onMounted(async () => {
 
       <nav class="site-nav" aria-label="Главная навигация">
         <RouterLink to="/">Записаться</RouterLink>
+        <RouterLink v-if="auth.canManageTenant || !auth.isAuthenticated" to="/manage">Кабинет</RouterLink>
         <RouterLink v-if="!auth.isAuthenticated" to="/login">Войти</RouterLink>
         <template v-else>
           <span class="site-nav__user">{{ auth.user?.name }}</span>

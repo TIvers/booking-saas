@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, ensureCsrfCookie, getApiProblem, tenantIsConfigured } from '@/api/client'
+import type { TenantRole } from '@/api/types'
 
 export interface AuthUser {
   id: number
@@ -10,7 +11,7 @@ export interface AuthUser {
 
 interface AuthPayload {
   user: AuthUser
-  role: string
+  role: TenantRole
 }
 
 interface ApiResponse<T> {
@@ -19,9 +20,10 @@ interface ApiResponse<T> {
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null)
-  const role = ref<string | null>(null)
+  const role = ref<TenantRole | null>(null)
   const initialized = ref(false)
   const isAuthenticated = computed(() => user.value !== null)
+  const canManageTenant = computed(() => role.value === 'owner' || role.value === 'manager')
 
   function setAuth(payload: AuthPayload): void {
     user.value = payload.user
@@ -34,6 +36,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function loadCurrentUser(): Promise<void> {
+    if (initialized.value) return
+
     if (!tenantIsConfigured) {
       initialized.value = true
       return
@@ -85,6 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
     role,
     initialized,
     isAuthenticated,
+    canManageTenant,
     clear,
     loadCurrentUser,
     login,

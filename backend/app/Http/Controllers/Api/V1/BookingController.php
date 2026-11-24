@@ -61,7 +61,10 @@ class BookingController
             $query->where(
                 'starts_at',
                 '>=',
-                CarbonImmutable::parse($filters['from'], 'UTC')->startOfDay(),
+                CarbonImmutable::parse(
+                    $filters['from'],
+                    $request->attributes->get('tenant')->timezone,
+                )->startOfDay()->utc(),
             );
         }
 
@@ -69,7 +72,10 @@ class BookingController
             $query->where(
                 'starts_at',
                 '<',
-                CarbonImmutable::parse($filters['to'], 'UTC')->addDay()->startOfDay(),
+                CarbonImmutable::parse(
+                    $filters['to'],
+                    $request->attributes->get('tenant')->timezone,
+                )->addDay()->startOfDay()->utc(),
             );
         }
 

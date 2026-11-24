@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BookingController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\LocationController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServiceController;
@@ -27,6 +28,7 @@ Route::prefix('v1')
         Route::get('/slots', [SlotController::class, 'index']);
 
         Route::middleware(['auth:sanctum', 'tenant.member', 'tenant.manager'])->group(function (): void {
+            Route::get('/manage/dashboard', DashboardController::class);
             Route::get('/manage/services', [ServiceController::class, 'manageIndex']);
             Route::get('/manage/staff', [StaffController::class, 'manageIndex']);
 

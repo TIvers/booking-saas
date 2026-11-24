@@ -32,9 +32,10 @@ staff. Writes require an authenticated tenant owner or manager:
 - `PUT` or `DELETE /api/v1/staff/{id}/schedule/exceptions/{YYYY-MM-DD}`
 
 The production workflow seeds the `studio-oliva` demo organization with a
-location, sample services, one staff member, and a weekly schedule. It runs
-after migrations with the privileged `booking` database role and is safe to
-repeat.
+location, sample services, one staff member, a weekly schedule, and an owner
+account. Configure `DEMO_OWNER_EMAIL` and `DEMO_OWNER_PASSWORD` as GitHub
+Secrets; the password is hashed before it is stored. The seeder runs after
+migrations with the privileged `booking` database role and is safe to repeat.
 
 Deleting a service or staff member deactivates it to preserve booking history.
 Updating a weekly schedule replaces all work ranges and breaks; weekdays use
@@ -44,6 +45,9 @@ for the same day.
 
 ## Booking API
 
+- `GET /api/v1/manage/dashboard` returns current-month booking counts, service
+  and staff activity, and the next active bookings. The value summary is based
+  on confirmed/completed service prices; it is not payment revenue.
 - `GET /api/v1/slots?staff_id={id}&service_id={id}&date=YYYY-MM-DD` returns
   available intervals in UTC. The date is interpreted in the location timezone.
 - Authenticated tenant members can create bookings with

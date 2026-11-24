@@ -38,9 +38,10 @@ npm run dev
 1. Добавьте DNS A-запись `booking` на IP сервера с доменом `iversdev.ru`.
 2. Установите Docker через [scripts/setup-self-hosted-runner.sh](./scripts/setup-self-hosted-runner.sh).
 3. Зарегистрируйте GitHub Actions runner с labels `self-hosted,linux,x64,booking-saas`.
-4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `DB_APP_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`.
+4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `DB_APP_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `DEMO_OWNER_EMAIL`, `DEMO_OWNER_PASSWORD`.
    `POSTGRES_PASSWORD` используется привилегированной ролью для миграций, а приложение подключается ограниченной ролью `booking_app`.
    Создайте `DB_APP_PASSWORD` как URL-safe пароль длиной не менее 32 символов, например локально командой `openssl rand -hex 32`, и сохраните только в GitHub Secrets.
+   `DEMO_OWNER_EMAIL` и `DEMO_OWNER_PASSWORD` задают вход владельца демо-организации; пароль должен быть длиной не менее 12 символов (его можно сгенерировать `openssl rand -hex 32`). Не передавайте пароль в чат и не сохраняйте его в файлах репозитория.
    Перед первой выкладкой создайте строку организации, чтобы получить числовой ID:
 
    ```bash

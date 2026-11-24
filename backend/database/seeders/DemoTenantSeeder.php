@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Enums\Role;
 use App\Models\Location;
+use App\Models\Membership;
 use App\Models\Service;
 use App\Models\Staff;
 use App\Models\Tenant;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use RuntimeException;
 
 class DemoTenantSeeder extends Seeder
 {
@@ -40,6 +44,7 @@ class DemoTenantSeeder extends Seeder
                 [(string) $tenant->getKey()],
             );
             app()->instance('currentTenant', $tenant);
+            $this->provisionOwner();
 
             $location = Location::query()->firstOrCreate(
                 ['name' => 'Центральный филиал'],
@@ -96,5 +101,53 @@ class DemoTenantSeeder extends Seeder
                 );
             }
         });
+    }
+
+    private function provisionOwner(): void
+    {
+        $email = config('booking.demo_owner.email');
+        $password = config('booking.demo_owner.password');
+
+        if (
+            ! is_string($email)
+            || filter_var($email, FILTER_VALIDATE_EMAIL) === false
+            || ! is_string($password)
+            || strlen($password) < 12
+        ) {
+            throw new RuntimeException(
+                'Set DEMO_OWNER_EMAIL and a DEMO_OWNER_PASSWORD of at least 12 characters in GitHub Secrets.'
+            );
+        }
+
+        $owner = DB::table('users')->where('email', $email)->first(['id']);
+        $now = now();
+
+        if ($owner === null) {
+            $ownerId = (int) DB::selectOne(
+                "SELECT nextval(pg_get_serial_sequence('users', 'id')) AS id"
+            )->id;
+
+            DB::table('users')->insert([
+                'id' => $ownerId,
+                'name' => 'Владелец',
+                'email' => $email,
+                'password' => Hash::make($password),
+                'email_verified_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } else {
+            $ownerId = (int) $owner->id;
+
+            DB::table('users')->where('id', $ownerId)->update([
+                'name' => 'Владелец',
+                'password' => Hash::make($password),
+                'updated_at' => $now,
+            ]);
+        }
+
+        $membership = Membership::query()->firstOrNew(['user_id' => $ownerId]);
+        $membership->role = Role::Owner;
+        $membership->save();
     }
 }

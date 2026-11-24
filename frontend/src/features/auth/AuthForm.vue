@@ -4,12 +4,21 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { getApiProblem } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
+const props = withDefaults(
+  defineProps<{
+    initialMode?: 'login' | 'register'
+  }>(),
+  {
+    initialMode: 'register',
+  },
+)
+
 const emit = defineEmits<{
   authenticated: []
 }>()
 
 const auth = useAuthStore()
-const mode = ref<'login' | 'register'>('register')
+const mode = ref<'login' | 'register'>(props.initialMode)
 const name = ref('')
 const email = ref('')
 const password = ref('')
