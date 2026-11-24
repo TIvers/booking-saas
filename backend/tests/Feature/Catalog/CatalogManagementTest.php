@@ -3,10 +3,8 @@
 declare(strict_types=1);
 
 use App\Enums\Role;
-use App\Models\Membership;
 use App\Models\Service;
 use App\Models\Staff;
-use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Tests\Support\TenantFixtures;
 
@@ -84,12 +82,7 @@ it('allows owners to create a service and rejects a deposit above its price', fu
 
 it('does not allow a customer to manage the catalog', function () {
     $tenant = TenantFixtures::createTenant('customer-tenant');
-    $customer = User::factory()->create();
-    TenantFixtures::activate($tenant);
-    Membership::query()->create([
-        'user_id' => $customer->getKey(),
-        'role' => Role::Customer,
-    ]);
+    $customer = TenantFixtures::createMember($tenant, role: Role::Customer);
 
     $this->actingAs($customer)
         ->withHeader('X-Tenant', (string) $tenant->getKey())

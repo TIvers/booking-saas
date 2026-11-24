@@ -37,6 +37,11 @@ Tenant middleware starts a database transaction, sets
 the request. Eloquent tenant scopes provide an additional application-level
 guard; PostgreSQL RLS is the database-level guard.
 
+User rows become visible to RLS only after a tenant membership is created.
+Registration therefore inserts the user without `RETURNING`, creates the
+membership, and only then loads the user; preserve this order when changing the
+registration flow.
+
 ## PostgreSQL roles
 
 Production uses two roles:

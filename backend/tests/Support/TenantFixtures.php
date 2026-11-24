@@ -39,18 +39,37 @@ final class TenantFixtures
         app()->instance('currentTenant', $tenant);
     }
 
-    public static function createMember(Tenant $tenant, array $attributes = []): User
-    {
+    public static function createMember(
+        Tenant $tenant,
+        array $attributes = [],
+        Role $role = Role::Owner,
+    ): User {
         self::activate($tenant);
 
-        $user = User::factory()->create($attributes);
+        $user = User::factory()->make($attributes);
+        $userId = (int) DB::selectOne(
+            "SELECT nextval(pg_get_serial_sequence('users', 'id')) AS id"
+        )->id;
+        $now = now();
 
-        Membership::create([
-            'user_id' => $user->getKey(),
-            'role' => Role::Owner,
+        // The user stays invisible to SELECT policies until its tenant membership is inserted.
+        DB::table('users')->insert([
+            'id' => $userId,
+            'name' => $user->name,
+            'email' => $user->email,
+            'email_verified_at' => $user->email_verified_at,
+            'password' => $user->getAuthPassword(),
+            'remember_token' => $user->getRememberToken(),
+            'created_at' => $now,
+            'updated_at' => $now,
         ]);
 
-        return $user;
+        Membership::create([
+            'user_id' => $userId,
+            'role' => $role,
+        ]);
+
+        return User::query()->findOrFail($userId);
     }
 
     public static function createLocation(Tenant $tenant, string $name): Location

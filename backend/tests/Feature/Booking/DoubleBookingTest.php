@@ -68,7 +68,13 @@ function seedFixtures(): array
         'updated_at' => $now,
     ]);
 
-    $customer = DB::table('users')->insertGetId([
+    $customer = (int) DB::selectOne(
+        "SELECT nextval(pg_get_serial_sequence('users', 'id')) AS id"
+    )->id;
+
+    // Avoid INSERT ... RETURNING before the test user has a tenant membership.
+    DB::table('users')->insert([
+        'id' => $customer,
         'name' => 'Customer',
         'email' => 'customer@example.test',
         'password' => 'not-a-real-hash',

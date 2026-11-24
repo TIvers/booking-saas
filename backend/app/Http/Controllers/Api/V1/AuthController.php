@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Symfony\Component\HttpFoundation\Response;
 
 class AuthController
@@ -45,14 +46,27 @@ class AuthController
 
         try {
             $user = DB::transaction(function () use ($validated): User {
-                $user = User::create($validated);
+                $userId = (int) DB::selectOne(
+                    "SELECT nextval(pg_get_serial_sequence('users', 'id')) AS id"
+                )->id;
+                $now = now();
+
+                // RLS hides a user until its membership exists, so this insert must not RETURN the row yet.
+                DB::table('users')->insert([
+                    'id' => $userId,
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
 
                 Membership::create([
-                    'user_id' => $user->getKey(),
+                    'user_id' => $userId,
                     'role' => Role::Customer,
                 ]);
 
-                return $user;
+                return User::query()->findOrFail($userId);
             });
         } catch (QueryException $exception) {
             if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
