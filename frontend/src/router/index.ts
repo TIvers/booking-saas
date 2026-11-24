@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 import BookingWizard from '@/features/booking/BookingWizard.vue'
 import BookingsCalendar from '@/features/bookings/BookingsCalendar.vue'
 import BookingsList from '@/features/bookings/BookingsList.vue'
+import MyBookingsView from '@/features/bookings/MyBookingsView.vue'
 import DashboardView from '@/features/dashboard/DashboardView.vue'
 import ScheduleEditor from '@/features/schedule/ScheduleEditor.vue'
 import ManagementLayout from '@/layouts/ManagementLayout.vue'
@@ -22,6 +23,12 @@ export const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
+    },
+    {
+      path: '/my-bookings',
+      name: 'my-bookings',
+      component: MyBookingsView,
+      meta: { requiresCustomer: true },
     },
     {
       path: '/manage',
@@ -69,7 +76,9 @@ export const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (!to.matched.some((record) => record.meta.requiresManager)) return true
+  const requiresManager = to.matched.some((record) => record.meta.requiresManager)
+  const requiresCustomer = to.matched.some((record) => record.meta.requiresCustomer)
+  if (!requiresManager && !requiresCustomer) return true
 
   const auth = useAuthStore()
   await auth.loadCurrentUser()
@@ -78,7 +87,10 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
 
-  if (!auth.canManageTenant) return { name: 'booking' }
+  if (requiresManager && !auth.canManageTenant) return { name: 'booking' }
+  if (requiresCustomer && auth.role !== 'customer') {
+    return { name: auth.canManageTenant ? 'manage-dashboard' : 'booking' }
+  }
 
   return true
 })

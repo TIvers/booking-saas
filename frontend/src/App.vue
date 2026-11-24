@@ -43,6 +43,7 @@ onMounted(async () => {
 
       <nav class="site-nav" aria-label="Главная навигация">
         <RouterLink to="/">Записаться</RouterLink>
+        <RouterLink v-if="auth.role === 'customer'" to="/my-bookings">Мои записи</RouterLink>
         <RouterLink v-if="auth.canManageTenant || !auth.isAuthenticated" to="/manage">Кабинет</RouterLink>
         <RouterLink v-if="!auth.isAuthenticated" to="/login">Войти</RouterLink>
         <template v-else>
