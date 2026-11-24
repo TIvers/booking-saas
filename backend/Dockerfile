@@ -9,7 +9,7 @@ RUN apk add --no-cache \
         linux-headers \
         $PHPIZE_DEPS \
     && docker-php-ext-install -j"$(nproc)" \
-        pdo_pgsql pgsql pcntl sockets intl mbstring zip \
+        pdo_pgsql pgsql pcntl posix sockets intl mbstring zip \
     && pecl install redis \
     && docker-php-ext-enable redis \
     && apk del $PHPIZE_DEPS
