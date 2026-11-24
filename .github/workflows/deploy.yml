@@ -26,6 +26,11 @@ jobs:
           REVERB_APP_KEY: ${{ secrets.REVERB_APP_KEY }}
           REVERB_APP_SECRET: ${{ secrets.REVERB_APP_SECRET }}
         run: |
+          set -euo pipefail
+          : "${APP_KEY:?Add the APP_KEY repository secret}"
+          : "${POSTGRES_PASSWORD:?Add the POSTGRES_PASSWORD repository secret}"
+          : "${REVERB_APP_KEY:?Add the REVERB_APP_KEY repository secret}"
+          : "${REVERB_APP_SECRET:?Add the REVERB_APP_SECRET repository secret}"
           cp backend/.env.production backend/.env
           sed -i "s|^APP_KEY=.*|APP_KEY=${APP_KEY}|" backend/.env
           sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${POSTGRES_PASSWORD}|" backend/.env
@@ -37,6 +42,8 @@ jobs:
         env:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
+          set -euo pipefail
+          : "${POSTGRES_PASSWORD:?Add the POSTGRES_PASSWORD repository secret}"
           printf 'POSTGRES_DB=booking\nPOSTGRES_USER=booking\nPOSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD" > .env
 
       - name: Build and start containers
