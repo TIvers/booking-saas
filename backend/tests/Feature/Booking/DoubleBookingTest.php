@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
+use PgSql\Connection;
 
 /*
 |--------------------------------------------------------------------------
@@ -33,7 +34,13 @@ function seedFixtures(): array
 {
     $now = now();
 
-    $tenant = DB::table('tenants')->insertGetId([
+    $tenant = (int) DB::selectOne(
+        "SELECT nextval(pg_get_serial_sequence('tenants', 'id')) AS id"
+    )->id;
+    DB::select("SELECT set_config('app.tenant_id', ?, false)", [(string) $tenant]);
+
+    DB::table('tenants')->insert([
+        'id' => $tenant,
         'name' => 'Demo Salon',
         'slug' => 'demo-salon',
         'timezone' => 'Europe/Berlin',
@@ -227,8 +234,8 @@ it('rejects a booking that ends before it starts', function () {
 | Требуется расширение PHP pgsql (функции pg_*), иначе тесты пропускаются.
 */
 
-/** @return array{0: PgSql\Connection, 1: PgSql\Connection} */
-function openTwoConnections(): array
+/** @return array{0: Connection, 1: Connection} */
+function openTwoConnections(int $tenantId): array
 {
     $config = config('database.connections.'.config('database.default'));
 
@@ -243,10 +250,20 @@ function openTwoConnections(): array
         $quote($config['password']),
     );
 
-    return [
+    $connections = [
         pg_connect($dsn, PGSQL_CONNECT_FORCE_NEW),
         pg_connect($dsn, PGSQL_CONNECT_FORCE_NEW),
     ];
+
+    foreach ($connections as $connection) {
+        pg_query_params(
+            $connection,
+            "SELECT set_config('app.tenant_id', $1, false)",
+            [(string) $tenantId],
+        );
+    }
+
+    return $connections;
 }
 
 /** @param array{tenant: int, staff: int, service: int, customer: int} $f */
@@ -264,7 +281,7 @@ function rawInsertSql(array $f): string
 
 it('lets exactly one of two concurrent transactions take the same slot', function () {
     $f = seedFixtures();
-    [$a, $b] = openTwoConnections();
+    [$a, $b] = openTwoConnections($f['tenant']);
     $sql = rawInsertSql($f);
 
     pg_query($a, 'BEGIN');
@@ -286,7 +303,7 @@ it('lets exactly one of two concurrent transactions take the same slot', functio
 
 it('lets the waiting transaction take the slot if the first one rolls back', function () {
     $f = seedFixtures();
-    [$a, $b] = openTwoConnections();
+    [$a, $b] = openTwoConnections($f['tenant']);
     $sql = rawInsertSql($f);
 
     pg_query($a, 'BEGIN');

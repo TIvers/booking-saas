@@ -4,11 +4,20 @@ Multi-tenant SaaS-платформа онлайн-записи с Laravel 12, Po
 
 ## Локальный запуск
 
+Скопируйте примеры окружения:
+
 ```bash
-docker compose up -d --build
+cp .env.example .env
+cp backend/.env.example backend/.env
+docker compose build
+docker compose up -d postgres redis
+docker compose run --rm --no-deps app composer install
+docker compose run --rm --no-deps app php artisan key:generate
+docker compose run --rm --no-deps app php artisan migrate --force
+docker compose up -d
 ```
 
-Основной адрес разработки определяется контейнером Caddy. Для разработки frontend можно запускать отдельно:
+Для разработки frontend можно запускать отдельно:
 
 ```bash
 cd frontend
@@ -27,7 +36,9 @@ npm run dev
 1. Добавьте DNS A-запись `booking` на IP сервера с доменом `iversdev.ru`.
 2. Установите Docker через [scripts/setup-self-hosted-runner.sh](./scripts/setup-self-hosted-runner.sh).
 3. Зарегистрируйте GitHub Actions runner с labels `self-hosted,linux,x64,booking-saas`.
-4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`.
+4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `DB_APP_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`.
+   `POSTGRES_PASSWORD` используется привилегированной ролью для миграций, а приложение подключается ограниченной ролью `booking_app`.
+   Создайте `DB_APP_PASSWORD` как URL-safe пароль длиной не менее 32 символов, например локально командой `openssl rand -hex 32`, и сохраните только в GitHub Secrets.
 5. На сервере из checkout репозитория установите конфиг host Nginx:
 
    ```bash
@@ -37,4 +48,6 @@ npm run dev
    sudo systemctl reload nginx
    ```
 
-6. Отправьте ветку `main`; workflow соберет и запустит приложение.
+6. Отправьте готовые изменения в `main`; workflow соберет приложение, настроит ограниченную роль БД, применит миграции и выполнит smoke test.
+
+Production использует существующий PostgreSQL volume: настройка роли `booking_app` выполняется идемпотентно и не удаляет данные. Не запускайте `docker compose down -v`.

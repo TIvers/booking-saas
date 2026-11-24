@@ -1,7 +1,14 @@
 <?php
 
-/**
- * ОПИСАНИЕ ФАЙЛА: enum статусов записи.
- * Значения: pending, confirmed, completed, cancelled, no_show.
- * Методы: допустимые переходы (canTransitionTo), список «активных» статусов, занимающих слот.
- */
+declare(strict_types=1);
+
+namespace App\Enums;
+
+enum BookingStatus: string
+{
+    case Pending = 'pending';
+    case Confirmed = 'confirmed';
+    case Completed = 'completed';
+    case Cancelled = 'cancelled';
+    case NoShow = 'no_show';
+}

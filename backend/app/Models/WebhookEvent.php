@@ -1,6 +1,25 @@
 <?php
 
-/**
- * ОПИСАНИЕ ФАЙЛА: журнал входящих вебхуков. Поля: provider, event_id (unique), payload (jsonb), processed_at.
- * Основа идемпотентности обработки платежей.
- */
+declare(strict_types=1);
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class WebhookEvent extends Model
+{
+    protected $fillable = [
+        'provider',
+        'event_id',
+        'payload',
+        'processed_at',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'payload' => 'array',
+            'processed_at' => 'immutable_datetime',
+        ];
+    }
+}

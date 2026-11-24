@@ -33,9 +33,23 @@ jobs:
           extensions: pdo_pgsql, pgsql, pcntl, posix
           coverage: none
       - run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Prepare restricted test database role
+        env:
+          PGPASSWORD: booking
+        run: |
+          psql --host=127.0.0.1 --port=5432 --username=booking --dbname=booking_test \
+            --set=ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE booking_app LOGIN PASSWORD 'booking-app-test'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+          GRANT USAGE, CREATE ON SCHEMA public TO booking_app;
+          CREATE EXTENSION IF NOT EXISTS btree_gist;
+          SQL
       - run: cp .env.example .env
       - run: php artisan key:generate
       - run: php artisan test
+        env:
+          DB_USERNAME: booking_app
+          DB_PASSWORD: booking-app-test
 
   frontend:
     runs-on: ubuntu-latest

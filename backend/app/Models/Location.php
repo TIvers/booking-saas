@@ -1,6 +1,25 @@
 <?php
 
-/**
- * ОПИСАНИЕ ФАЙЛА: филиал организации. Поля: name, address, timezone (IANA).
- * Расписание сотрудников интерпретируется в таймзоне филиала.
- */
+declare(strict_types=1);
+
+namespace App\Models;
+
+use App\Models\Concerns\BelongsToTenant;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Location extends Model
+{
+    use BelongsToTenant;
+
+    protected $fillable = [
+        'name',
+        'address',
+        'timezone',
+    ];
+
+    public function staff(): HasMany
+    {
+        return $this->hasMany(Staff::class);
+    }
+}

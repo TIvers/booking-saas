@@ -23,17 +23,24 @@ jobs:
         env:
           APP_KEY: ${{ secrets.APP_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
           REVERB_APP_KEY: ${{ secrets.REVERB_APP_KEY }}
           REVERB_APP_SECRET: ${{ secrets.REVERB_APP_SECRET }}
         run: |
           set -euo pipefail
           : "${APP_KEY:?Add the APP_KEY repository secret}"
           : "${POSTGRES_PASSWORD:?Add the POSTGRES_PASSWORD repository secret}"
+          : "${DB_APP_PASSWORD:?Add the DB_APP_PASSWORD repository secret}"
           : "${REVERB_APP_KEY:?Add the REVERB_APP_KEY repository secret}"
           : "${REVERB_APP_SECRET:?Add the REVERB_APP_SECRET repository secret}"
+          if [[ ! "$DB_APP_PASSWORD" =~ ^[A-Za-z0-9_-]{32,}$ ]]; then
+            echo "DB_APP_PASSWORD must be at least 32 URL-safe characters" >&2
+            exit 1
+          fi
           cp backend/.env.production backend/.env
           sed -i "s|^APP_KEY=.*|APP_KEY=${APP_KEY}|" backend/.env
-          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${POSTGRES_PASSWORD}|" backend/.env
+          sed -i "s|^DB_USERNAME=.*|DB_USERNAME=booking_app|" backend/.env
+          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_APP_PASSWORD}|" backend/.env
           sed -i "s|^REVERB_APP_KEY=.*|REVERB_APP_KEY=${REVERB_APP_KEY}|" backend/.env
           sed -i "s|^REVERB_APP_SECRET=.*|REVERB_APP_SECRET=${REVERB_APP_SECRET}|" backend/.env
 
@@ -41,10 +48,13 @@ jobs:
         shell: bash
         env:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
         run: |
           set -euo pipefail
           : "${POSTGRES_PASSWORD:?Add the POSTGRES_PASSWORD repository secret}"
-          printf 'POSTGRES_DB=booking\nPOSTGRES_USER=booking\nPOSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD" > .env
+          : "${DB_APP_PASSWORD:?Add the DB_APP_PASSWORD repository secret}"
+          printf 'POSTGRES_DB=booking\nPOSTGRES_USER=booking\nPOSTGRES_PASSWORD=%s\nDB_APP_PASSWORD=%s\n' \
+            "$POSTGRES_PASSWORD" "$DB_APP_PASSWORD" > .env
 
       - name: Build and start containers
         run: docker compose build --pull
@@ -57,11 +67,49 @@ jobs:
           -e COMPOSER_HOME=/tmp/composer
           app composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
+      - name: Start database services
+        run: docker compose up -d postgres redis
+
+      - name: Provision restricted application database role
+        shell: bash
+        env:
+          DB_APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready --username booking --dbname booking >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          docker compose exec -T postgres pg_isready --username booking --dbname booking
+          {
+            printf '\\set runtime_password %s\n' "$DB_APP_PASSWORD"
+            cat docker/postgres/provision-runtime-role.sql
+          } | docker compose exec -T postgres sh -c \
+            'psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"'
+
+      - name: Clear cached configuration
+        run: docker compose run --rm --no-deps app php artisan config:clear
+
       - name: Start containers
         run: docker compose up -d --remove-orphans
 
       - name: Run migrations
-        run: docker compose exec -T app php artisan migrate --force
+        shell: bash
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: >-
+          docker compose exec -T
+          -e DB_USERNAME=booking
+          -e DB_PASSWORD="$POSTGRES_PASSWORD"
+          app php artisan migrate --force
+
+      - name: Grant application database access
+        run: >-
+          docker compose exec -T postgres sh -c
+          'psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"'
+          < docker/postgres/grant-runtime-role.sql
 
       - name: Cache configuration
         run: |
