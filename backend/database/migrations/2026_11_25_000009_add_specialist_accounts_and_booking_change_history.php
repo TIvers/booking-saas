@@ -89,7 +89,7 @@ return new class extends Migration
         DB::statement('ALTER TABLE booking_changes DISABLE ROW LEVEL SECURITY');
         Schema::dropIfExists('booking_changes');
 
-        DB::statement('ALTER TABLE users ALTER COLUMN email SET NOT NULL');
+        // Keep email nullable on rollback so accounts created without email remain valid.
         Schema::table('memberships', function (Blueprint $table): void {
             $table->dropUnique('memberships_tenant_username_unique');
             $table->dropColumn('username');
