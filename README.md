@@ -41,7 +41,20 @@ npm run dev
 4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `DB_APP_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`.
    `POSTGRES_PASSWORD` используется привилегированной ролью для миграций, а приложение подключается ограниченной ролью `booking_app`.
    Создайте `DB_APP_PASSWORD` как URL-safe пароль длиной не менее 32 символов, например локально командой `openssl rand -hex 32`, и сохраните только в GitHub Secrets.
-   Также задайте GitHub Actions repository variable `VITE_TENANT_ID` с числовым ID организации, которую показывает публичная страница записи.
+   Перед первой выкладкой создайте строку организации, чтобы получить числовой ID:
+
+   ```bash
+   sudo docker exec -it booking-saas-postgres-1 psql -U booking -d booking \
+     -c "INSERT INTO tenants (name, slug, timezone, created_at, updated_at)
+         VALUES ('Студия Олива', 'studio-oliva', 'Europe/Moscow', NOW(), NOW())
+         ON CONFLICT (slug) DO NOTHING
+         RETURNING id;"
+   ```
+
+   Если строка уже была создана, получите её ID запросом
+   `SELECT id FROM tenants WHERE slug = 'studio-oliva';`.
+   Задайте этот ID как GitHub Actions repository variable `VITE_TENANT_ID`.
+   После миграций workflow идемпотентно заполнит демо-каталог и расписание.
 5. На сервере из checkout репозитория установите конфиг host Nginx:
 
    ```bash

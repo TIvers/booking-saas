@@ -31,6 +31,11 @@ staff. Writes require an authenticated tenant owner or manager:
 - `GET /api/v1/staff/{id}/schedule`, `PUT /api/v1/staff/{id}/schedule`
 - `PUT` or `DELETE /api/v1/staff/{id}/schedule/exceptions/{YYYY-MM-DD}`
 
+The production workflow seeds the `studio-oliva` demo organization with a
+location, sample services, one staff member, and a weekly schedule. It runs
+after migrations with the privileged `booking` database role and is safe to
+repeat.
+
 Deleting a service or staff member deactivates it to preserve booking history.
 Updating a weekly schedule replaces all work ranges and breaks; weekdays use
 ISO numbering (Monday 1 through Sunday 7), and times are local to the staff

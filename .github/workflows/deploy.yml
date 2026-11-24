@@ -111,6 +111,16 @@ jobs:
           -e DB_PASSWORD="$POSTGRES_PASSWORD"
           app php artisan migrate --force
 
+      - name: Seed demo tenant and booking catalog
+        shell: bash
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: >-
+          docker compose exec -T
+          -e DB_USERNAME=booking
+          -e DB_PASSWORD="$POSTGRES_PASSWORD"
+          app php artisan db:seed --class=DemoTenantSeeder --force
+
       - name: Grant application database access
         run: >-
           docker compose exec -T postgres sh -c
