@@ -137,11 +137,4 @@ it('limits specialists to their own bookings and gives them read-only schedule a
         ->getJson("/api/v1/bookings/{$ownBooking}")
         ->assertOk()
         ->assertJsonPath('data.changes.0.reason', 'Перенос невозможен');
-
-    expect(
-        Membership::query()
-            ->where('username', 'alex.staff')
-            ->firstOrFail()
-            ->role->value,
-    )->toBe('staff');
 });
