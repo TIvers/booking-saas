@@ -1,0 +1,4 @@
+{
+    "name": "booking-saas-frontend",
+    "description": "ОПИСАНИЕ ФАЙЛА: зависимости и скрипты. vue, vue-router, pinia, @tanstack/vue-query, tailwindcss, laravel-echo + pusher-js, vitest, playwright. Скрипты: dev, build, test, lint, gen:api."
+}

@@ -1,0 +1,4 @@
+# ОПИСАНИЕ ФАЙЛА: оркестрация всей инфраструктуры одной командой (docker compose up).
+# Сервисы: app (php-fpm), nginx, postgres:16, redis, horizon (воркер очередей),
+# reverb (WebSocket-сервер), scheduler (php artisan schedule:work), frontend (node + vite).
+# Нужны healthcheck-и для postgres и redis, именованные volumes для данных.

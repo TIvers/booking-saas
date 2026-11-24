@@ -1,0 +1,4 @@
+# ОПИСАНИЕ ФАЙЛА: GitHub Actions пайплайн.
+# Джобы: backend (поднять postgres+redis сервисы, composer install, pint --test, larastan, pest с coverage),
+# frontend (npm ci, vue-tsc, eslint, vitest, build).
+# Опционально: e2e на Playwright и сборка docker-образа.

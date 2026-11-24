@@ -1,0 +1,2 @@
+# ОПИСАНИЕ ФАЙЛА: исключения для git.
+# vendor/, node_modules/, .env, storage/*.key, build-артефакты фронтенда, файлы IDE, coverage/.
