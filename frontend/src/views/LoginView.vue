@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthForm from '@/features/auth/AuthForm.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const isManagementRedirect = computed(() => {
   const redirect = route.query.redirect
   const tenantSlug = route.params.tenantSlug
@@ -24,7 +26,11 @@ function afterAuthentication(): void {
       && typeof tenantSlug === 'string'
       && redirect.startsWith(`/t/${tenantSlug}/`)
       ? redirect
-      : { name: 'booking', params: { tenantSlug } }
+    : auth.role === 'staff'
+      ? { name: 'specialist-calendar', params: { tenantSlug } }
+      : auth.canManageTenant
+        ? { name: 'manage-dashboard', params: { tenantSlug } }
+        : { name: 'booking', params: { tenantSlug } }
 
   void router.replace(destination)
 }

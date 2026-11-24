@@ -22,7 +22,9 @@ const actionError = ref('')
 const actionNotice = ref('')
 const actionLoading = ref(false)
 const cancelTarget = ref<BookingRecord | null>(null)
+const cancelReason = ref('')
 const rescheduleTarget = ref<BookingRecord | null>(null)
+const rescheduleReason = ref('')
 const rescheduleDate = ref('')
 const rescheduleSlots = ref<Slot[]>([])
 const selectedSlot = ref<Slot | null>(null)
@@ -77,6 +79,7 @@ function canChange(booking: BookingRecord): boolean {
 
 function openReschedule(booking: BookingRecord): void {
   rescheduleTarget.value = booking
+  rescheduleReason.value = ''
   rescheduleDate.value = dateInTimezone(
     booking.staff.location.timezone,
     new Date(booking.starts_at),
@@ -95,8 +98,11 @@ async function cancelBooking(): Promise<void> {
   actionNotice.value = ''
 
   try {
-    await api.post(`/bookings/${cancelTarget.value.id}/cancel`)
+    await api.post(`/bookings/${cancelTarget.value.id}/cancel`, {
+      reason: cancelReason.value.trim() || null,
+    })
     cancelTarget.value = null
+    cancelReason.value = ''
     actionNotice.value = 'Запись отменена.'
     await load(page.value)
   } catch (requestError) {
@@ -142,6 +148,7 @@ async function saveReschedule(): Promise<void> {
   try {
     await api.post(`/bookings/${rescheduleTarget.value.id}/reschedule`, {
       starts_at: selectedSlot.value.starts_at,
+      reason: rescheduleReason.value.trim() || null,
     })
     rescheduleTarget.value = null
     actionNotice.value = 'Запись перенесена.'
@@ -211,6 +218,12 @@ onMounted(() => {
           <strong>{{ booking.service.name }}</strong>
           <span>{{ booking.staff.display_name }} · {{ booking.staff.location.name }}</span>
         </div>
+        <div v-if="booking.changes?.some((change) => change.reason)" class="booking-comments">
+          <p v-for="change in booking.changes" v-show="change.reason" :key="change.id">
+            <strong>{{ change.action === 'cancelled' ? 'Причина отмены' : 'Причина переноса' }}:</strong>
+            {{ change.reason }}
+          </p>
+        </div>
         <div class="booking-card__price">
           {{ formatMoney(booking.service.price_cents, tenant.tenant?.currency ?? 'USD') }}
         </div>
@@ -225,7 +238,7 @@ onMounted(() => {
           <BaseButton
             variant="ghost"
             :disabled="actionLoading"
-            @click="cancelTarget = booking; actionError = ''"
+            @click="cancelTarget = booking; cancelReason = ''; actionError = ''"
           >
             Отменить
           </BaseButton>
@@ -250,6 +263,10 @@ onMounted(() => {
           {{ cancelTarget.service.name }} ·
           {{ formatSlotDateTime(cancelTarget.starts_at, cancelTarget.staff.location.timezone) }}
         </p>
+        <label class="field">
+          <span>Причина отмены (необязательно)</span>
+          <textarea v-model.trim="cancelReason" maxlength="1000" rows="3" />
+        </label>
         <p v-if="actionError" class="message message--error" role="alert">{{ actionError }}</p>
         <div class="modal-actions">
           <BaseButton variant="secondary" :disabled="actionLoading" @click="cancelTarget = null">
@@ -272,6 +289,10 @@ onMounted(() => {
             :min="dateInTimezone(rescheduleTarget.staff.location.timezone)"
             @change="searchedRescheduleSlots = false; rescheduleSlots = []; selectedSlot = null"
           />
+        </label>
+        <label class="field">
+          <span>Причина переноса (необязательно)</span>
+          <textarea v-model.trim="rescheduleReason" maxlength="1000" rows="3" />
         </label>
         <BaseButton
           variant="secondary"
@@ -380,7 +401,8 @@ onMounted(() => {
 }
 
 .filters select,
-.field input {
+.field input,
+.field textarea {
   background: #fff;
   border: 1px solid #d5dfd8;
   border-radius: 0.6rem;
@@ -388,6 +410,27 @@ onMounted(() => {
   font: inherit;
   min-height: 2.7rem;
   padding: 0.55rem 0.65rem;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.booking-comments {
+  background: #f5f8f4;
+  border-radius: 0.65rem;
+  color: #647368;
+  flex: 1 1 100%;
+  font-size: 0.78rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.booking-comments p {
+  margin: 0.15rem 0;
+}
+
+.booking-comments strong {
+  color: #31574e;
 }
 
 .booking-list {

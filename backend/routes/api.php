@@ -22,6 +22,8 @@ Route::prefix('v1')
         Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
         Route::get('/auth/me', [AuthController::class, 'me'])
             ->middleware(['auth:sanctum', 'tenant.member']);
+        Route::put('/auth/username', [AuthController::class, 'updateUsername'])
+            ->middleware(['auth:sanctum', 'tenant.member']);
 
         Route::get('/locations', [LocationController::class, 'index']);
         Route::get('/locations/{location}', [LocationController::class, 'show']);
@@ -30,6 +32,9 @@ Route::prefix('v1')
         Route::get('/staff', [StaffController::class, 'index']);
         Route::get('/staff/{staff}', [StaffController::class, 'show']);
         Route::get('/slots', [SlotController::class, 'index']);
+
+        Route::get('/staff/me/schedule', [ScheduleController::class, 'showMine'])
+            ->middleware(['auth:sanctum', 'tenant.member', 'tenant.staff']);
 
         Route::middleware(['auth:sanctum', 'tenant.member', 'tenant.manager'])->group(function (): void {
             Route::get('/manage/dashboard', DashboardController::class);
@@ -46,6 +51,7 @@ Route::prefix('v1')
             Route::post('/staff', [StaffController::class, 'store']);
             Route::patch('/staff/{staff}', [StaffController::class, 'update']);
             Route::delete('/staff/{staff}', [StaffController::class, 'destroy']);
+            Route::put('/staff/{staff}/account', [StaffController::class, 'createAccount']);
 
             Route::get('/staff/{staff}/schedule', [ScheduleController::class, 'show']);
             Route::put('/staff/{staff}/schedule', [ScheduleController::class, 'update']);

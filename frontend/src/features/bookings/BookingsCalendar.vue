@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, BookingRecord, PaginatedMeta } from '@/api/types'
 import { dateInTimezone, formatSlotTime } from '@/composables/useTimezone'
+import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 
 interface BookingPageResponse extends ApiResponse<BookingRecord[]> {
@@ -18,6 +19,7 @@ interface CalendarDay {
 }
 
 const tenant = useTenantStore()
+const auth = useAuthStore()
 const bookings = ref<BookingRecord[]>([])
 const meta = ref<PaginatedMeta | null>(null)
 const loading = ref(false)
@@ -51,6 +53,10 @@ const days = computed<CalendarDay[]>(() => {
 })
 
 const weekEnd = computed(() => weekDates.value.at(-1) ?? weekStart.value)
+const bookingsLocation = computed(() => ({
+  name: auth.role === 'staff' ? 'specialist-bookings' : 'manage-bookings',
+  params: { tenantSlug: tenant.slug ?? '' },
+}))
 
 function addDays(date: string, count: number): string {
   const value = new Date(`${date}T12:00:00Z`)
@@ -143,7 +149,7 @@ onMounted(load)
 
     <p v-if="meta && meta.total > bookings.length" class="calendar-warning">
       За неделю больше 100 записей. Откройте
-      <RouterLink :to="{ name: 'manage-bookings', params: { tenantSlug: tenant.slug ?? '' } }">
+      <RouterLink :to="bookingsLocation">
         список
       </RouterLink>
       для просмотра всех.

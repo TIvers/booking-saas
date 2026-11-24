@@ -19,11 +19,20 @@ Initial endpoints:
 - `POST /api/v1/auth/login`
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
+- `PUT /api/v1/auth/username`
 
 `GET /api/v1/tenant` includes the tenant's ISO 4217 `currency` code and the
 `demo_payments_enabled` feature flag. The database defaults existing and new
 tenants to `USD`; update `tenants.currency` to configure a different currency.
 Service prices are stored in hundredths of the configured currency.
+
+Customers register and sign in with a username unique within their organization;
+email is optional and is not used for new-account sign-in. Owners and managers
+continue to sign in by email. Existing customer and specialist accounts without
+a username can temporarily sign in by email and are prompted to choose a
+username. `user_identities` and the existing email-verification columns are
+schema scaffolding only; external identity providers and verification flows
+are not enabled.
 
 ## Catalog and schedules
 
@@ -34,6 +43,8 @@ staff. Writes require an authenticated tenant owner or manager:
 - `GET /api/v1/services`, `POST /api/v1/services`, `PATCH /api/v1/services/{id}`, `DELETE /api/v1/services/{id}`
 - `GET /api/v1/staff`, `POST /api/v1/staff`, `PATCH /api/v1/staff/{id}`, `DELETE /api/v1/staff/{id}`
 - `GET /api/v1/manage/services` and `GET /api/v1/manage/staff` include inactive records for managers.
+- `PUT /api/v1/staff/{id}/account` lets the organization owner create a
+  tenant-scoped specialist login for an unlinked team member.
 - `GET /api/v1/staff/{id}/schedule`, `PUT /api/v1/staff/{id}/schedule`
 - `PUT` or `DELETE /api/v1/staff/{id}/schedule/exceptions/{YYYY-MM-DD}`
 
@@ -79,6 +90,12 @@ for the same day.
   no payment provider is called.
 - `POST /api/v1/bookings/{id}/reschedule` accepts a new ISO-8601 `starts_at`.
   The old interval remains booked unless the new slot is accepted.
+- A specialist can view the tenant calendar and booking list, but the API only
+  returns bookings assigned to their linked staff record. They can cancel or
+  reschedule only those bookings and can read, but not edit, their own schedule
+  through `GET /api/v1/staff/me/schedule`. Optional cancellation and rescheduling
+  reasons are recorded in booking history and shown to the customer and
+  organization managers.
 
 Overlapping reservations are rejected by PostgreSQL's exclusion constraint and
 returned as HTTP 409. Deposit reservations enqueue a delayed, tenant-scoped job

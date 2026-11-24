@@ -19,6 +19,8 @@ export interface StaffMember {
   id: number
   display_name: string
   is_active: boolean
+  account_linked?: boolean
+  account_username?: string | null
   location: {
     id: number
     name: string
@@ -53,8 +55,22 @@ export interface BookingRecord extends Booking {
   customer: {
     id: number
     name: string
-    email: string
+    email: string | null
   }
+  changes?: BookingChange[]
+}
+
+export interface BookingChange {
+  id: number
+  action: 'cancelled' | 'rescheduled'
+  from_starts_at: string
+  to_starts_at: string | null
+  reason: string | null
+  created_at: string
+  actor?: {
+    id: number
+    name: string
+  } | null
 }
 
 export interface PaginatedMeta {

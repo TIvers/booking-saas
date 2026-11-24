@@ -20,11 +20,14 @@ const emit = defineEmits<{
 const auth = useAuthStore()
 const mode = ref<'login' | 'register'>(props.initialMode)
 const name = ref('')
+const username = ref('')
 const email = ref('')
+const login = ref('')
 const password = ref('')
 const passwordConfirmation = ref('')
 const remember = ref(true)
 const busy = ref(false)
+const needsUsernameSetup = ref(false)
 const message = ref('')
 const fieldErrors = ref<Record<string, string[]>>({})
 
@@ -43,16 +46,22 @@ async function submit(): Promise<void> {
     if (mode.value === 'register') {
       await auth.register({
         name: name.value,
-        email: email.value,
+        username: username.value,
+        email: email.value || undefined,
         password: password.value,
         password_confirmation: passwordConfirmation.value,
       })
     } else {
       await auth.login({
-        email: email.value,
+        login: login.value,
         password: password.value,
         remember: remember.value,
       })
+      if (auth.requiresUsername) {
+        needsUsernameSetup.value = true
+        message.value = ''
+        return
+      }
     }
 
     emit('authenticated')
@@ -64,10 +73,52 @@ async function submit(): Promise<void> {
     busy.value = false
   }
 }
+
+async function saveUsername(): Promise<void> {
+  busy.value = true
+  message.value = ''
+  fieldErrors.value = {}
+
+  try {
+    await auth.updateUsername(username.value)
+    needsUsernameSetup.value = false
+    emit('authenticated')
+  } catch (error) {
+    const problem = getApiProblem(error, 'Не удалось сохранить логин.')
+    message.value = problem.message
+    fieldErrors.value = problem.errors
+  } finally {
+    busy.value = false
+  }
+}
 </script>
 
 <template>
   <section class="auth-form">
+    <form v-if="needsUsernameSetup" class="auth-form__fields" @submit.prevent="saveUsername">
+      <p class="form-message form-message--info">
+        Для входа по логину создайте его для существующего аккаунта. До этого вход выполнен по email.
+      </p>
+      <label class="field">
+        <span>Новый логин</span>
+        <input
+          v-model.trim="username"
+          required
+          minlength="3"
+          maxlength="32"
+          pattern="[a-z0-9][a-z0-9_.-]{2,31}"
+          autocapitalize="off"
+          autocomplete="username"
+        />
+        <small v-if="fieldErrors.username">{{ fieldErrors.username[0] }}</small>
+      </label>
+      <p v-if="message" class="form-message" role="alert">{{ message }}</p>
+      <BaseButton type="submit" :loading="busy" class="auth-form__submit">
+        Сохранить логин
+      </BaseButton>
+    </form>
+
+    <template v-else>
     <div class="auth-form__tabs" role="tablist" aria-label="Действие с аккаунтом">
       <button
         type="button"
@@ -96,16 +147,41 @@ async function submit(): Promise<void> {
         <small v-if="fieldErrors.name">{{ fieldErrors.name[0] }}</small>
       </label>
 
-      <label class="field">
-        <span>Электронная почта</span>
+      <label v-if="mode === 'register'" class="field">
+        <span>Логин</span>
+        <input
+          v-model.trim="username"
+          required
+          minlength="3"
+          maxlength="32"
+          pattern="[a-z0-9][a-z0-9_.-]{2,31}"
+          autocapitalize="off"
+          autocomplete="username"
+        />
+        <small v-if="fieldErrors.username">{{ fieldErrors.username[0] }}</small>
+      </label>
+
+      <label v-if="mode === 'register'" class="field">
+        <span>Email для будущего подтверждения (необязательно)</span>
         <input
           v-model.trim="email"
           type="email"
           autocomplete="email"
-          required
           maxlength="255"
         />
         <small v-if="fieldErrors.email">{{ fieldErrors.email[0] }}</small>
+      </label>
+
+      <label v-else class="field">
+        <span>Логин</span>
+        <input
+          v-model.trim="login"
+          required
+          maxlength="255"
+          autocapitalize="off"
+          autocomplete="username"
+        />
+        <small>Для старых аккаунтов временно подойдёт email.</small>
       </label>
 
       <label class="field">
@@ -139,9 +215,10 @@ async function submit(): Promise<void> {
       <p v-if="message" class="form-message" role="alert">{{ message }}</p>
 
       <BaseButton type="submit" :loading="busy" class="auth-form__submit">
-        {{ mode === 'register' ? 'Создать аккаунт и записаться' : 'Войти и записаться' }}
+        {{ mode === 'register' ? 'Создать аккаунт и записаться' : 'Войти' }}
       </BaseButton>
     </form>
+    </template>
   </section>
 </template>
 
@@ -232,5 +309,10 @@ async function submit(): Promise<void> {
   color: #8d322c;
   margin: 0;
   padding: 0.75rem 0.85rem;
+}
+
+.form-message--info {
+  background: #edf5ee;
+  color: #355b42;
 }
 </style>

@@ -39,6 +39,11 @@ class User extends Authenticatable
         return $this->hasMany(Membership::class);
     }
 
+    public function identities(): HasMany
+    {
+        return $this->hasMany(UserIdentity::class);
+    }
+
     public function tenants(): BelongsToMany
     {
         return $this->belongsToMany(Tenant::class, 'memberships')

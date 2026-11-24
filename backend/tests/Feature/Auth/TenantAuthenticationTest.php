@@ -15,6 +15,7 @@ it('registers a customer inside the selected tenant', function () {
         'X-Tenant' => (string) $tenant->getKey(),
     ])->postJson('/api/v1/auth/register', [
         'name' => 'Test Customer',
+        'username' => 'test-customer',
         'email' => 'customer@example.test',
         'password' => 'correct-horse-battery',
         'password_confirmation' => 'correct-horse-battery',
@@ -22,6 +23,7 @@ it('registers a customer inside the selected tenant', function () {
 
     $response->assertCreated()
         ->assertJsonPath('data.user.email', 'customer@example.test')
+    ->assertJsonPath('data.user.username', 'test-customer')
         ->assertJsonPath('data.role', 'customer');
 });
 
@@ -39,12 +41,45 @@ it('authenticates a tenant member and returns the selected tenant context', func
 
     $this->withHeaders($headers)
         ->postJson('/api/v1/auth/login', [
-            'email' => 'owner@example.test',
+            'login' => 'owner@example.test',
             'password' => 'correct-horse-battery',
         ])
         ->assertOk()
         ->assertJsonPath('data.user.id', $user->getKey())
         ->assertJsonPath('data.role', 'owner');
+});
+
+it('allows a legacy customer to use email until they set a tenant username', function () {
+    $tenant = TenantFixtures::createTenant('legacy-login-tenant');
+    $customer = TenantFixtures::createMember($tenant, [
+        'email' => 'legacy-customer@example.test',
+        'password' => 'correct-horse-battery',
+    ], Role::Customer);
+    $headers = [
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ];
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/login', [
+            'login' => 'legacy-customer@example.test',
+            'password' => 'correct-horse-battery',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.user.id', $customer->getKey())
+        ->assertJsonPath('data.user.username', null);
+
+    $this->withHeaders($headers)
+        ->putJson('/api/v1/auth/username', ['username' => 'legacy-client'])
+        ->assertOk()
+        ->assertJsonPath('data.username', 'legacy-client');
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/login', [
+            'login' => 'legacy-customer@example.test',
+            'password' => 'correct-horse-battery',
+        ])
+        ->assertUnprocessable();
 });
 
 it('returns the authenticated member in the selected tenant', function () {

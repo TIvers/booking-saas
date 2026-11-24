@@ -8,6 +8,7 @@ use App\Enums\BookingStatus;
 use App\Exceptions\SlotAlreadyTakenException;
 use App\Jobs\ReleaseExpiredReservations;
 use App\Models\Booking;
+use App\Models\BookingChange;
 use App\Models\Service;
 use App\Models\Staff;
 use App\Services\Slots\Slot;
@@ -18,10 +19,15 @@ use Illuminate\Support\Facades\DB;
 
 class RescheduleBookingAction
 {
-    public function execute(Booking $booking, CarbonImmutable $startsAt): Booking
+    public function execute(
+        Booking $booking,
+        CarbonImmutable $startsAt,
+        ?int $actorUserId = null,
+        ?string $reason = null,
+    ): Booking
     {
         try {
-            return DB::transaction(function () use ($booking, $startsAt): Booking {
+            return DB::transaction(function () use ($booking, $startsAt, $actorUserId, $reason): Booking {
                 $booking = Booking::query()
                     ->lockForUpdate()
                     ->findOrFail($booking->getKey());
@@ -59,6 +65,7 @@ class RescheduleBookingAction
                     return $booking;
                 }
 
+                $previousStartsAt = $booking->starts_at;
                 $this->cancelExpiredReservations($staff, $booking, $now);
 
                 $localDate = $startsAt->setTimezone($staff->location->timezone)->startOfDay();
@@ -76,6 +83,14 @@ class RescheduleBookingAction
                 }
 
                 $booking->save();
+                BookingChange::query()->create([
+                    'booking_id' => $booking->getKey(),
+                    'actor_user_id' => $actorUserId,
+                    'action' => 'rescheduled',
+                    'from_starts_at' => $previousStartsAt,
+                    'to_starts_at' => $booking->starts_at,
+                    'reason' => $reason,
+                ]);
 
                 if ($booking->status === BookingStatus::Pending && $booking->expires_at !== null) {
                     ReleaseExpiredReservations::dispatch(

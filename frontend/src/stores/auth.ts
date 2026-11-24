@@ -7,7 +7,8 @@ import type { TenantRole } from '@/api/types'
 export interface AuthUser {
   id: number
   name: string
-  email: string
+  email: string | null
+  username: string | null
 }
 
 interface AuthPayload {
@@ -26,6 +27,9 @@ export const useAuthStore = defineStore('auth', () => {
   let initializedTenantSlug: string | null = null
   const isAuthenticated = computed(() => user.value !== null)
   const canManageTenant = computed(() => role.value === 'owner' || role.value === 'manager')
+  const requiresUsername = computed(
+    () => (role.value === 'customer' || role.value === 'staff') && user.value?.username === null,
+  )
 
   function setAuth(payload: AuthPayload): void {
     user.value = payload.user
@@ -73,7 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(credentials: {
-    email: string
+    login: string
     password: string
     remember: boolean
   }): Promise<void> {
@@ -86,7 +90,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(credentials: {
     name: string
-    email: string
+    username: string
+    email?: string
     password: string
     password_confirmation: string
   }): Promise<void> {
@@ -95,6 +100,13 @@ export const useAuthStore = defineStore('auth', () => {
     setAuth(response.data.data)
     initializedTenantSlug = useTenantStore().slug
     initialized.value = true
+  }
+
+  async function updateUsername(username: string): Promise<void> {
+    const response = await api.put<ApiResponse<{ username: string }>>('/auth/username', {
+      username,
+    })
+    if (user.value) user.value.username = response.data.data.username
   }
 
   async function logout(): Promise<void> {
@@ -108,11 +120,13 @@ export const useAuthStore = defineStore('auth', () => {
     initialized,
     isAuthenticated,
     canManageTenant,
+    requiresUsername,
     clear,
     reset,
     loadCurrentUser,
     login,
     register,
+    updateUsername,
     logout,
   }
 })

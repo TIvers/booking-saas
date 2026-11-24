@@ -9,6 +9,7 @@ import type {
   Slot,
 } from '@/api/types'
 import { dateInTimezone, formatMoney, formatSlotDateTime, formatSlotTime } from '@/composables/useTimezone'
+import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 
 interface BookingPageResponse extends ApiResponse<BookingRecord[]> {
@@ -16,6 +17,7 @@ interface BookingPageResponse extends ApiResponse<BookingRecord[]> {
 }
 
 const tenant = useTenantStore()
+const auth = useAuthStore()
 const bookings = ref<BookingRecord[]>([])
 const meta = ref<PaginatedMeta | null>(null)
 const loading = ref(false)
@@ -25,7 +27,9 @@ const page = ref(1)
 const from = ref('')
 const to = ref('')
 const cancelTarget = ref<BookingRecord | null>(null)
+const cancelReason = ref('')
 const rescheduleTarget = ref<BookingRecord | null>(null)
+const rescheduleReason = ref('')
 const rescheduleDate = ref('')
 const rescheduleSlots = ref<Slot[]>([])
 const searchedRescheduleSlots = ref(false)
@@ -101,8 +105,11 @@ async function cancelBooking(): Promise<void> {
   actionError.value = ''
 
   try {
-    await api.post(`/bookings/${cancelTarget.value.id}/cancel`)
+    await api.post(`/bookings/${cancelTarget.value.id}/cancel`, {
+      reason: cancelReason.value.trim() || null,
+    })
     cancelTarget.value = null
+    cancelReason.value = ''
     await load(page.value)
   } catch (requestError) {
     actionError.value = getApiProblem(requestError, 'Не удалось отменить запись.').message
@@ -113,6 +120,7 @@ async function cancelBooking(): Promise<void> {
 
 function openReschedule(booking: BookingRecord): void {
   rescheduleTarget.value = booking
+  rescheduleReason.value = ''
   rescheduleDate.value = dateInTimezone(
     booking.staff.location.timezone,
     new Date(booking.starts_at),
@@ -156,6 +164,7 @@ async function saveReschedule(): Promise<void> {
   try {
     await api.post(`/bookings/${rescheduleTarget.value.id}/reschedule`, {
       starts_at: selectedSlot.value.starts_at,
+      reason: rescheduleReason.value.trim() || null,
     })
     rescheduleTarget.value = null
     await load(page.value)
@@ -224,22 +233,30 @@ onMounted(() => {
         </div>
         <div class="booking-card__details">
           <strong>{{ booking.service.name }}</strong>
-          <span>{{ booking.customer.name }} · {{ booking.customer.email }}</span>
+          <span>
+            {{ booking.customer.name }}<template v-if="booking.customer.email"> · {{ booking.customer.email }}</template>
+          </span>
           <span>{{ booking.staff.display_name }} · {{ booking.staff.location.name }}</span>
+        </div>
+        <div v-if="booking.changes?.some((change) => change.reason)" class="booking-comments">
+          <p v-for="change in booking.changes" v-show="change.reason" :key="change.id">
+            <strong>{{ change.action === 'cancelled' ? 'Причина отмены' : 'Причина переноса' }}:</strong>
+            {{ change.reason }}
+          </p>
         </div>
         <div class="booking-card__price">
           {{ formatMoney(booking.service.price_cents, tenant.tenant?.currency ?? 'USD') }}
         </div>
         <div class="booking-card__actions">
           <BaseButton
-            v-if="booking.status === 'pending'"
+            v-if="auth.canManageTenant && booking.status === 'pending'"
             :loading="actionLoading"
             @click="confirmBooking(booking)"
           >
             Подтвердить
           </BaseButton>
           <BaseButton
-            v-if="booking.status === 'confirmed'"
+            v-if="booking.status === 'confirmed' || (auth.role === 'staff' && booking.status === 'pending')"
             variant="secondary"
             :disabled="actionLoading"
             @click="openReschedule(booking)"
@@ -250,7 +267,7 @@ onMounted(() => {
             v-if="booking.status === 'pending' || booking.status === 'confirmed'"
             variant="ghost"
             :disabled="actionLoading"
-            @click="cancelTarget = booking; actionError = ''"
+            @click="cancelTarget = booking; cancelReason = ''; actionError = ''"
           >
             Отменить
           </BaseButton>
@@ -275,6 +292,10 @@ onMounted(() => {
           {{ cancelTarget.customer.name }} ·
           {{ formatSlotDateTime(cancelTarget.starts_at, cancelTarget.staff.location.timezone) }}
         </p>
+        <label class="field">
+          <span>Причина (необязательно)</span>
+          <textarea v-model.trim="cancelReason" maxlength="1000" rows="3" />
+        </label>
         <p v-if="actionError" class="message message--error" role="alert">{{ actionError }}</p>
         <div class="modal-actions">
           <BaseButton variant="secondary" :disabled="actionLoading" @click="cancelTarget = null">
@@ -297,6 +318,10 @@ onMounted(() => {
             :min="dateInTimezone(rescheduleTarget.staff.location.timezone)"
             @change="searchedRescheduleSlots = false; rescheduleSlots = []; selectedSlot = null"
           />
+        </label>
+        <label class="field">
+          <span>Причина переноса (необязательно)</span>
+          <textarea v-model.trim="rescheduleReason" maxlength="1000" rows="3" />
         </label>
         <BaseButton variant="secondary" :loading="rescheduleLoading" @click="loadRescheduleSlots">
           Найти время
@@ -393,7 +418,8 @@ onMounted(() => {
 
 .filters input,
 .filters select,
-.field input {
+.field input,
+.field textarea {
   background: #fff;
   border: 1px solid #d5dfd8;
   border-radius: 0.6rem;
@@ -401,6 +427,27 @@ onMounted(() => {
   font: inherit;
   min-height: 2.7rem;
   padding: 0.55rem 0.65rem;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.booking-comments {
+  background: #f5f8f4;
+  border-radius: 0.65rem;
+  color: #647368;
+  flex: 1 1 100%;
+  font-size: 0.78rem;
+  padding: 0.65rem 0.8rem;
+}
+
+.booking-comments p {
+  margin: 0.15rem 0;
+}
+
+.booking-comments strong {
+  color: #31574e;
 }
 
 .booking-list {

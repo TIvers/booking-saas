@@ -7,10 +7,13 @@ import BookingsList from '@/features/bookings/BookingsList.vue'
 import MyBookingsView from '@/features/bookings/MyBookingsView.vue'
 import DashboardView from '@/features/dashboard/DashboardView.vue'
 import ScheduleEditor from '@/features/schedule/ScheduleEditor.vue'
+import MyScheduleView from '@/features/schedule/MyScheduleView.vue'
 import ManagementLayout from '@/layouts/ManagementLayout.vue'
+import SpecialistLayout from '@/layouts/SpecialistLayout.vue'
 import ServicesManager from '@/features/services/ServicesManager.vue'
 import StaffManager from '@/features/staff/StaffManager.vue'
 import LoginView from '@/views/LoginView.vue'
+import UsernameSetupView from '@/views/UsernameSetupView.vue'
 import TenantLandingView from '@/views/TenantLandingView.vue'
 
 export const router = createRouter({
@@ -30,6 +33,11 @@ export const router = createRouter({
       path: '/t/:tenantSlug/login',
       name: 'login',
       component: LoginView,
+    },
+    {
+      path: '/t/:tenantSlug/account/username',
+      name: 'account-username',
+      component: UsernameSetupView,
     },
     {
       path: '/t/:tenantSlug/my-bookings',
@@ -75,6 +83,32 @@ export const router = createRouter({
       ],
     },
     {
+      path: '/t/:tenantSlug/specialist',
+      component: SpecialistLayout,
+      meta: { requiresSpecialist: true },
+      children: [
+        {
+          path: '',
+          redirect: { name: 'specialist-calendar' },
+        },
+        {
+          path: 'calendar',
+          name: 'specialist-calendar',
+          component: BookingsCalendar,
+        },
+        {
+          path: 'bookings',
+          name: 'specialist-bookings',
+          component: BookingsList,
+        },
+        {
+          path: 'schedule',
+          name: 'specialist-schedule',
+          component: MyScheduleView,
+        },
+      ],
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },
@@ -84,7 +118,9 @@ export const router = createRouter({
 
 router.beforeEach(async (to) => {
   const requiresManager = to.matched.some((record) => record.meta.requiresManager)
+  const requiresSpecialist = to.matched.some((record) => record.meta.requiresSpecialist)
   const requiresCustomer = to.matched.some((record) => record.meta.requiresCustomer)
+  const isUsernameSetup = to.name === 'account-username'
   const tenantSlug = typeof to.params.tenantSlug === 'string' ? to.params.tenantSlug : null
   const tenant = useTenantStore()
   const auth = useAuthStore()
@@ -105,8 +141,10 @@ router.beforeEach(async (to) => {
   }
 
   await auth.loadCurrentUser()
-  if (!requiresManager && !requiresCustomer) return true
-  if (!auth.isAuthenticated) {
+  if (
+    !auth.isAuthenticated
+    && (requiresManager || requiresSpecialist || requiresCustomer || isUsernameSetup)
+  ) {
     return {
       name: 'login',
       params: { tenantSlug },
@@ -114,10 +152,36 @@ router.beforeEach(async (to) => {
     }
   }
 
+  if (auth.requiresUsername && !isUsernameSetup) {
+    return {
+      name: 'account-username',
+      params: { tenantSlug },
+      query: { redirect: to.fullPath },
+    }
+  }
+
+  if (isUsernameSetup && !auth.requiresUsername) {
+    return auth.role === 'staff'
+      ? { name: 'specialist-calendar', params: { tenantSlug } }
+      : { name: 'booking', params: { tenantSlug } }
+  }
+
+  if (!requiresManager && !requiresSpecialist && !requiresCustomer) return true
   if (requiresManager && !auth.canManageTenant) {
-    return { name: 'booking', params: { tenantSlug } }
+    return auth.role === 'staff'
+      ? { name: 'specialist-calendar', params: { tenantSlug } }
+      : { name: 'booking', params: { tenantSlug } }
+  }
+  if (requiresSpecialist && auth.role !== 'staff') {
+    return auth.canManageTenant
+      ? { name: 'manage-dashboard', params: { tenantSlug } }
+      : { name: 'booking', params: { tenantSlug } }
   }
   if (requiresCustomer && auth.role !== 'customer') {
+    if (auth.role === 'staff') {
+      return { name: 'specialist-calendar', params: { tenantSlug } }
+    }
+
     return auth.canManageTenant
       ? { name: 'manage-dashboard', params: { tenantSlug } }
       : { name: 'booking', params: { tenantSlug } }

@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, Service, StaffMember } from '@/api/types'
+import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 
 interface Location {
@@ -18,6 +19,7 @@ interface StaffDraft {
   service_ids: number[]
 }
 
+const auth = useAuthStore()
 const tenant = useTenantStore()
 const staff = ref<StaffMember[]>([])
 const locations = ref<Location[]>([])
@@ -28,6 +30,13 @@ const saving = ref(false)
 const error = ref('')
 const notice = ref('')
 const showLocationForm = ref(false)
+const accountTarget = ref<StaffMember | null>(null)
+const accountDraft = reactive({
+  username: '',
+  email: '',
+  password: '',
+  password_confirmation: '',
+})
 const locationDraft = reactive({
   name: '',
   address: '',
@@ -154,6 +163,40 @@ async function createLocation(): Promise<void> {
   }
 }
 
+function openAccountForm(member: StaffMember): void {
+  accountTarget.value = member
+  accountDraft.username = ''
+  accountDraft.email = ''
+  accountDraft.password = ''
+  accountDraft.password_confirmation = ''
+  error.value = ''
+  notice.value = ''
+}
+
+async function createStaffAccount(): Promise<void> {
+  if (!accountTarget.value) return
+
+  saving.value = true
+  error.value = ''
+  notice.value = ''
+
+  try {
+    await api.put(`/staff/${accountTarget.value.id}/account`, {
+      username: accountDraft.username,
+      email: accountDraft.email.trim() || null,
+      password: accountDraft.password,
+      password_confirmation: accountDraft.password_confirmation,
+    })
+    accountTarget.value = null
+    notice.value = 'Аккаунт специалиста создан и привязан к карточке команды.'
+    await load()
+  } catch (requestError) {
+    error.value = getApiProblem(requestError, 'Не удалось создать аккаунт специалиста.').message
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -244,6 +287,9 @@ onMounted(load)
           <span class="staff-card__status">{{ member.is_active ? 'Активен' : 'Отключён' }}</span>
           <h3>{{ member.display_name }}</h3>
           <p>{{ member.location.name }} · {{ member.location.timezone }}</p>
+          <p v-if="member.account_linked" class="account-status">
+            Аккаунт: <strong>{{ member.account_username }}</strong>
+          </p>
         </div>
         <div class="staff-card__services">
           <span v-for="service in member.services" :key="service.id" class="service-chip">
@@ -254,12 +300,69 @@ onMounted(load)
         <div class="staff-card__actions">
           <BaseButton variant="secondary" @click="edit(member)">Изменить</BaseButton>
           <BaseButton
+            v-if="auth.role === 'owner' && !member.account_linked"
+            variant="secondary"
+            @click="openAccountForm(member)"
+          >
+            Создать аккаунт
+          </BaseButton>
+          <BaseButton
             variant="ghost"
             @click="setActive(member, !member.is_active)"
           >
             {{ member.is_active ? 'Отключить' : 'Включить' }}
           </BaseButton>
         </div>
+        <form
+          v-if="auth.role === 'owner' && accountTarget?.id === member.id"
+          class="account-form"
+          @submit.prevent="createStaffAccount"
+        >
+          <h4>Доступ специалиста</h4>
+          <p>Логин будет работать только на странице этой организации.</p>
+          <label class="field">
+            <span>Логин</span>
+            <input
+              v-model.trim="accountDraft.username"
+              required
+              minlength="3"
+              maxlength="32"
+              pattern="[a-z0-9][a-z0-9_.-]{2,31}"
+              autocapitalize="off"
+              autocomplete="username"
+            />
+          </label>
+          <label class="field">
+            <span>Email для будущего подтверждения (необязательно)</span>
+            <input v-model.trim="accountDraft.email" type="email" maxlength="255" autocomplete="email" />
+          </label>
+          <label class="field">
+            <span>Пароль (не менее 12 символов)</span>
+            <input
+              v-model="accountDraft.password"
+              type="password"
+              required
+              minlength="12"
+              autocomplete="new-password"
+            />
+          </label>
+          <label class="field">
+            <span>Повторите пароль</span>
+            <input
+              v-model="accountDraft.password_confirmation"
+              type="password"
+              required
+              minlength="12"
+              autocomplete="new-password"
+            />
+          </label>
+          <div class="account-form__actions">
+            <BaseButton type="button" variant="ghost" :disabled="saving" @click="accountTarget = null">
+              Отмена
+            </BaseButton>
+            <BaseButton type="submit" :loading="saving">Создать аккаунт</BaseButton>
+          </div>
+        </form>
       </article>
     </div>
   </section>
@@ -402,6 +505,47 @@ onMounted(load)
   color: #77847c;
   font-size: 0.78rem;
   margin: 0;
+}
+
+.staff-card__identity .account-status {
+  color: #4a6a55;
+  margin-top: 0.35rem;
+}
+
+.account-status strong {
+  color: #31574e;
+}
+
+.account-form {
+  background: #f7f9f6;
+  border: 1px solid #e1e9e2;
+  border-radius: 0.8rem;
+  display: grid;
+  flex: 1 1 100%;
+  gap: 0.7rem;
+  padding: 0.9rem;
+}
+
+.account-form h4 {
+  color: #30493b;
+  margin: 0;
+}
+
+.account-form > p {
+  color: #758078;
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.account-form .field {
+  max-width: 32rem;
+}
+
+.account-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 .staff-card__status {

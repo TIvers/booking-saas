@@ -14,6 +14,10 @@ class Staff extends Model
 {
     use BelongsToTenant;
 
+    protected $hidden = [
+        'user_id',
+    ];
+
     protected $fillable = [
         'location_id',
         'user_id',

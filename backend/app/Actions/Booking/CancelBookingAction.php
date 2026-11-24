@@ -7,6 +7,7 @@ namespace App\Actions\Booking;
 use App\Enums\BookingStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Booking;
+use App\Models\BookingChange;
 use App\Models\Payment;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -16,9 +17,14 @@ class CancelBookingAction
     /**
      * @return array{booking: Booking, retained_deposit_cents: int, refund_due_cents: int}
      */
-    public function execute(Booking $booking, bool $customerInitiated): array
+    public function execute(
+        Booking $booking,
+        bool $customerInitiated,
+        ?int $actorUserId = null,
+        ?string $reason = null,
+    ): array
     {
-        return DB::transaction(function () use ($booking, $customerInitiated): array {
+        return DB::transaction(function () use ($booking, $customerInitiated, $actorUserId, $reason): array {
             $booking = Booking::query()
                 ->lockForUpdate()
                 ->findOrFail($booking->getKey());
@@ -52,6 +58,14 @@ class CancelBookingAction
             $booking->cancelled_at = $now;
             $booking->expires_at = null;
             $booking->save();
+            BookingChange::query()->create([
+                'booking_id' => $booking->getKey(),
+                'actor_user_id' => $actorUserId,
+                'action' => 'cancelled',
+                'from_starts_at' => $booking->starts_at,
+                'to_starts_at' => null,
+                'reason' => $reason,
+            ]);
             Payment::query()
                 ->where('booking_id', $booking->getKey())
                 ->where('provider', 'demo')

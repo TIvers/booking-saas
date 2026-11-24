@@ -38,15 +38,18 @@ class BookingController
             ]);
         }
 
-        $query = Booking::query()
-            ->with(['service', 'staff.location', 'customer'])
-            ->orderByDesc('starts_at');
+        $relations = ['service', 'staff.location', 'customer'];
+        if ($membership->role !== Role::Staff) {
+            $relations[] = 'changes.actor:id,name';
+        }
+        $query = Booking::query()->with($relations)->orderByDesc('starts_at');
 
         if ($membership->role === Role::Customer) {
             $query->where('customer_id', $request->user()->getAuthIdentifier());
         } elseif ($membership->role === Role::Staff) {
             $staffIds = Staff::query()
                 ->where('user_id', $request->user()->getAuthIdentifier())
+                ->where('is_active', true)
                 ->pluck('id');
             $query->whereIn('staff_id', $staffIds);
         } elseif (! $membership->role->canManageTenant()) {
@@ -120,20 +123,28 @@ class BookingController
             CarbonImmutable::parse($data['starts_at'])->utc(),
         );
 
-        return response()->json(['data' => $this->withRelations($booking)], 201);
+        return response()->json([
+            'data' => $this->withRelations($booking, $this->membership($request)->role),
+        ], 201);
     }
 
     public function show(Request $request, Booking $booking): JsonResponse
     {
-        $this->authorizeBooking($request, $booking);
+        $membership = $this->authorizeBooking($request, $booking);
 
-        return response()->json(['data' => $this->withRelations($booking)]);
+        return response()->json(['data' => $this->withRelations($booking, $membership->role)]);
     }
 
-    public function confirm(Booking $booking, ConfirmBookingAction $action): JsonResponse
+    public function confirm(
+        Request $request,
+        Booking $booking,
+        ConfirmBookingAction $action,
+    ): JsonResponse
     {
+        $membership = $this->membership($request);
+
         return response()->json([
-            'data' => $this->withRelations($action->execute($booking)),
+            'data' => $this->withRelations($action->execute($booking), $membership->role),
         ]);
     }
 
@@ -143,11 +154,19 @@ class BookingController
         CancelBookingAction $action,
     ): JsonResponse {
         $membership = $this->authorizeBooking($request, $booking);
-        $result = $action->execute($booking, $membership->role === Role::Customer);
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $result = $action->execute(
+            $booking,
+            $membership->role === Role::Customer,
+            (int) $request->user()->getAuthIdentifier(),
+            $data['reason'] ?? null,
+        );
 
         return response()->json([
             'data' => [
-                'booking' => $this->withRelations($result['booking']),
+                'booking' => $this->withRelations($result['booking'], $membership->role),
                 'cancellation' => [
                     'retained_deposit_cents' => $result['retained_deposit_cents'],
                     'refund_due_cents' => $result['refund_due_cents'],
@@ -161,17 +180,20 @@ class BookingController
         Booking $booking,
         RescheduleBookingAction $action,
     ): JsonResponse {
-        $this->authorizeBooking($request, $booking);
+        $membership = $this->authorizeBooking($request, $booking);
         $data = $request->validate([
             'starts_at' => $this->startsAtRules(),
+            'reason' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $booking = $action->execute(
             $booking,
             CarbonImmutable::parse($data['starts_at'])->utc(),
+            (int) $request->user()->getAuthIdentifier(),
+            $data['reason'] ?? null,
         );
 
-        return response()->json(['data' => $this->withRelations($booking)]);
+        return response()->json(['data' => $this->withRelations($booking, $membership->role)]);
     }
 
     /**
@@ -217,6 +239,7 @@ class BookingController
             && Staff::query()
                 ->where('id', $booking->staff_id)
                 ->where('user_id', $request->user()->getAuthIdentifier())
+                ->where('is_active', true)
                 ->exists()
         ) {
             return $membership;
@@ -225,8 +248,13 @@ class BookingController
         abort(403);
     }
 
-    private function withRelations(Booking $booking): Booking
+    private function withRelations(Booking $booking, Role $viewerRole): Booking
     {
-        return $booking->load(['service', 'staff.location', 'customer']);
+        $relations = ['service', 'staff.location', 'customer'];
+        if ($viewerRole !== Role::Staff) {
+            $relations[] = 'changes.actor:id,name';
+        }
+
+        return $booking->load($relations);
     }
 }

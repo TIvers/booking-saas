@@ -16,9 +16,32 @@ class ScheduleController
 {
     public function show(Staff $staff): JsonResponse
     {
+        return $this->scheduleResponse($staff);
+    }
+
+    public function showMine(Request $request): JsonResponse
+    {
+        $staff = Staff::query()
+            ->where('user_id', $request->user()->getAuthIdentifier())
+            ->firstOrFail();
+
+        return $this->scheduleResponse($staff);
+    }
+
+    private function scheduleResponse(Staff $staff): JsonResponse
+    {
+        $staff->loadMissing('location:id,name,timezone');
+
         return response()->json([
             'data' => [
                 'staff_id' => $staff->getKey(),
+                'staff' => [
+                    'display_name' => $staff->display_name,
+                    'location' => [
+                        'name' => $staff->location->name,
+                        'timezone' => $staff->location->timezone,
+                    ],
+                ],
                 'work_schedules' => $staff->workSchedules()
                     ->orderBy('weekday')
                     ->orderBy('start_time')

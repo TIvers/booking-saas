@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureTenantManager;
 use App\Http\Middleware\EnsureTenantMembership;
+use App\Http\Middleware\EnsureTenantStaff;
 use App\Http\Middleware\ResolveTenant;
 use App\Http\Middleware\SetPostgresTenantContext;
 use Illuminate\Foundation\Application;
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'tenant.member' => EnsureTenantMembership::class,
             'tenant.manager' => EnsureTenantManager::class,
+            'tenant.staff' => EnsureTenantStaff::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -28,6 +28,10 @@ const managementLocation = computed(() => ({
   name: 'manage-dashboard',
   params: { tenantSlug: tenant.slug ?? '' },
 }))
+const specialistLocation = computed(() => ({
+  name: 'specialist-calendar',
+  params: { tenantSlug: tenant.slug ?? '' },
+}))
 
 async function logout(): Promise<void> {
   authError.value = ''
@@ -62,6 +66,9 @@ async function retryTenant(): Promise<void> {
           <RouterLink :to="bookingLocation">Записаться</RouterLink>
           <RouterLink v-if="auth.role === 'customer'" :to="bookingsLocation">
             Мои записи
+          </RouterLink>
+          <RouterLink v-if="auth.role === 'staff'" :to="specialistLocation">
+            Кабинет специалиста
           </RouterLink>
           <RouterLink v-if="auth.canManageTenant || !auth.isAuthenticated" :to="managementLocation">
             Кабинет
