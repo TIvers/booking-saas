@@ -40,9 +40,18 @@ jobs:
           printf 'POSTGRES_DB=booking\nPOSTGRES_USER=booking\nPOSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD" > .env
 
       - name: Build and start containers
-        run: |
-          docker compose build --pull
-          docker compose up -d --remove-orphans
+        run: docker compose build --pull
+
+      - name: Install backend dependencies
+        run: >-
+          docker compose run --rm --no-deps
+          --user "$(id -u):$(id -g)"
+          -e HOME=/tmp
+          -e COMPOSER_HOME=/tmp/composer
+          app composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Start containers
+        run: docker compose up -d --remove-orphans
 
       - name: Run migrations
         run: docker compose exec -T app php artisan migrate --force
