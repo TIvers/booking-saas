@@ -14,6 +14,24 @@ Initial endpoints:
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
 
+## Catalog and schedules
+
+Tenant-scoped read endpoints expose locations, active services, and active
+staff. Writes require an authenticated tenant owner or manager:
+
+- `GET /api/v1/locations`, `POST /api/v1/locations`, `PATCH /api/v1/locations/{id}`
+- `GET /api/v1/services`, `POST /api/v1/services`, `PATCH /api/v1/services/{id}`, `DELETE /api/v1/services/{id}`
+- `GET /api/v1/staff`, `POST /api/v1/staff`, `PATCH /api/v1/staff/{id}`, `DELETE /api/v1/staff/{id}`
+- `GET /api/v1/manage/services` and `GET /api/v1/manage/staff` include inactive records for managers.
+- `GET /api/v1/staff/{id}/schedule`, `PUT /api/v1/staff/{id}/schedule`
+- `PUT` or `DELETE /api/v1/staff/{id}/schedule/exceptions/{YYYY-MM-DD}`
+
+Deleting a service or staff member deactivates it to preserve booking history.
+Updating a weekly schedule replaces all work ranges and breaks; weekdays use
+ISO numbering (Monday 1 through Sunday 7), and times are local to the staff
+member's location in `HH:MM` format. Each break must fit within a work range
+for the same day.
+
 Tenant middleware starts a database transaction, sets
 `app.tenant_id` transaction-locally, and resolves the tenant before handling
 the request. Eloquent tenant scopes provide an additional application-level

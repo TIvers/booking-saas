@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureTenantManager;
 use App\Http\Middleware\EnsureTenantMembership;
 use App\Http\Middleware\ResolveTenant;
 use App\Http\Middleware\SetPostgresTenantContext;
@@ -17,10 +18,14 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
+        // Tenant context must be set before Sanctum session reads and route model binding.
+        $middleware->prependToGroup('api', [
+            SetPostgresTenantContext::class,
+            ResolveTenant::class,
+        ]);
         $middleware->alias([
-            'tenant.context' => SetPostgresTenantContext::class,
             'tenant.member' => EnsureTenantMembership::class,
-            'tenant.resolve' => ResolveTenant::class,
+            'tenant.manager' => EnsureTenantManager::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

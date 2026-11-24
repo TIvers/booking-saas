@@ -1,10 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\LocationController;
+use App\Http\Controllers\Api\V1\ScheduleController;
+use App\Http\Controllers\Api\V1\ServiceController;
+use App\Http\Controllers\Api\V1\StaffController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
-    ->middleware(['tenant.context', 'tenant.resolve'])
     ->group(function (): void {
         Route::get('/tenant', [AuthController::class, 'tenant']);
         Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:6,1');
@@ -12,4 +15,32 @@ Route::prefix('v1')
         Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
         Route::get('/auth/me', [AuthController::class, 'me'])
             ->middleware(['auth:sanctum', 'tenant.member']);
+
+        Route::get('/locations', [LocationController::class, 'index']);
+        Route::get('/locations/{location}', [LocationController::class, 'show']);
+        Route::get('/services', [ServiceController::class, 'index']);
+        Route::get('/services/{service}', [ServiceController::class, 'show']);
+        Route::get('/staff', [StaffController::class, 'index']);
+        Route::get('/staff/{staff}', [StaffController::class, 'show']);
+
+        Route::middleware(['auth:sanctum', 'tenant.member', 'tenant.manager'])->group(function (): void {
+            Route::get('/manage/services', [ServiceController::class, 'manageIndex']);
+            Route::get('/manage/staff', [StaffController::class, 'manageIndex']);
+
+            Route::post('/locations', [LocationController::class, 'store']);
+            Route::patch('/locations/{location}', [LocationController::class, 'update']);
+
+            Route::post('/services', [ServiceController::class, 'store']);
+            Route::patch('/services/{service}', [ServiceController::class, 'update']);
+            Route::delete('/services/{service}', [ServiceController::class, 'destroy']);
+
+            Route::post('/staff', [StaffController::class, 'store']);
+            Route::patch('/staff/{staff}', [StaffController::class, 'update']);
+            Route::delete('/staff/{staff}', [StaffController::class, 'destroy']);
+
+            Route::get('/staff/{staff}/schedule', [ScheduleController::class, 'show']);
+            Route::put('/staff/{staff}/schedule', [ScheduleController::class, 'update']);
+            Route::put('/staff/{staff}/schedule/exceptions/{date}', [ScheduleController::class, 'updateException']);
+            Route::delete('/staff/{staff}/schedule/exceptions/{date}', [ScheduleController::class, 'destroyException']);
+        });
     });
