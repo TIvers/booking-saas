@@ -1,2 +1,14 @@
-# ОПИСАНИЕ ФАЙЛА: исключения для git.
-# vendor/, node_modules/, .env, storage/*.key, build-артефакты фронтенда, файлы IDE, coverage/.
+/vendor/
+/node_modules/
+node_modules/
+.env
+.env.*
+!.env.example
+!.env.production
+/backend/vendor/
+/backend/storage/*.key
+/frontend/dist/
+/coverage/
+.idea/
+.vscode/
+*.log
