@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Staff;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,7 @@ class StaffController
             'data' => Staff::query()
                 ->with([
                     'location:id,name,timezone',
-                    'services' => fn (Builder $query) => $query->orderBy('name'),
+                    'services' => fn (BelongsToMany $query) => $query->orderBy('name'),
                 ])
                 ->orderBy('display_name')
                 ->get(),
@@ -93,7 +94,7 @@ class StaffController
             ->where('is_active', true)
             ->with([
                 'location:id,name,timezone',
-                'services' => fn (Builder $query) => $query
+                'services' => fn (BelongsToMany $query) => $query
                     ->where('is_active', true)
                     ->orderBy('name'),
             ]);
@@ -103,7 +104,7 @@ class StaffController
     {
         return $staff->load([
             'location:id,name,timezone',
-            'services' => fn (Builder $query) => $query
+            'services' => fn (BelongsToMany $query) => $query
                 ->where('is_active', true)
                 ->orderBy('name'),
         ]);
