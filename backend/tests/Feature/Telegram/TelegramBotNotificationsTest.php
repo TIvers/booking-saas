@@ -9,7 +9,6 @@ use App\Models\TenantTelegramBot;
 use App\Models\UserIdentity;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Http\Client\Request as ClientRequest;
-use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\Support\TenantFixtures;
@@ -24,7 +23,7 @@ it('connects an organization bot and only subscribes the linked Telegram user', 
     $telegramId = 987654321;
     $webhookSecret = null;
 
-    Http::fake(function (ClientRequest $request) use (&$webhookSecret): Response {
+    Http::fake(function (ClientRequest $request) use (&$webhookSecret) {
         if (str_ends_with($request->url(), '/getMe')) {
             return Http::response([
                 'ok' => true,
