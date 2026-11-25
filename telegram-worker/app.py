@@ -20,6 +20,7 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/api/v1/telegram/python-webhook/{tenant_id}")
+@app.post("/api/v1/telegram/webhook/{tenant_id}")
 async def webhook(
     tenant_id: int,
     request: Request,
@@ -156,7 +157,7 @@ async def forward_subscription_update(tenant_id: int, secret: str, update: dict)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
-                f"{BACKEND_URL}/api/v1/telegram/webhook/{tenant_id}",
+                f"{BACKEND_URL}/api/v1/telegram/internal-webhook/{tenant_id}",
                 json=update,
                 headers={
                     "X-Tenant": str(tenant_id),

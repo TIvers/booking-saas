@@ -49,6 +49,9 @@ the SPA. Telegram sends updates to the Python worker container, which starts
 automatically with Docker; the Laravel webhook endpoint remains an internal
 handoff for booking-notification commands. Worker configuration is returned
 only after validation of the Telegram webhook secret.
+The proxy accepts both current and previous public webhook paths, so existing
+bots can be synchronized to the Python worker without reconnecting. The worker
+forwards booking-notification commands to a separate internal Laravel endpoint.
 
 Bot API requests use `TG_API_BASE` (default: the configured Telegram proxy).
 Both Laravel and the Python worker use this URL; the server does not fall back

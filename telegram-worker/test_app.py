@@ -73,6 +73,22 @@ class TelegramWebhookTests(unittest.TestCase):
             self.config["mini_app_url"],
         )
 
+    def test_existing_laravel_webhook_path_is_accepted_by_the_worker(self):
+        response = self.post(
+            "/api/v1/telegram/webhook/7",
+            self.headers(),
+            {
+                "message": {
+                    "chat": {"id": 1234, "type": "private"},
+                    "text": "/start",
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.load_config.assert_awaited_once_with(7, "webhook-secret", 1234)
+        self.telegram_call.assert_awaited_once()
+
     def test_subscription_start_is_forwarded_to_laravel(self):
         raw_token = "A" * 48
         update = {

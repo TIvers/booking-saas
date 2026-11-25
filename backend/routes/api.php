@@ -43,7 +43,7 @@ Route::prefix('v1')
             ->whereNumber('tenant');
         Route::post('/telegram/worker/marketing/{tenant}', [TelegramController::class, 'updateMarketingSubscription'])
             ->whereNumber('tenant');
-        Route::post('/telegram/webhook/{tenant}', [TelegramController::class, 'webhook'])
+        Route::post('/telegram/internal-webhook/{tenant}', [TelegramController::class, 'webhook'])
             ->whereNumber('tenant');
 
         Route::get('/staff/me/schedule', [ScheduleController::class, 'showMine'])
@@ -74,6 +74,8 @@ Route::prefix('v1')
             Route::post('/bookings/{booking}/confirm', [BookingController::class, 'confirm']);
             Route::get('/manage/telegram-bot', [TelegramController::class, 'bot']);
             Route::put('/manage/telegram-bot', [TelegramController::class, 'connectBot']);
+            Route::post('/manage/telegram-bot/refresh', [TelegramController::class, 'refreshBot'])
+                ->middleware('throttle:10,1');
             Route::put('/manage/telegram-bot/profile', [TelegramController::class, 'updateBotProfile']);
             Route::delete('/manage/telegram-bot', [TelegramController::class, 'disconnectBot']);
             Route::post('/manage/telegram-broadcasts', [TelegramController::class, 'broadcast']);

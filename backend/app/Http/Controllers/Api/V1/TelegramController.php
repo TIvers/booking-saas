@@ -69,7 +69,9 @@ class TelegramController
             ]);
         }
 
-        $tenantId = (int) $request->attributes->get('tenant')->getKey();
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $tenantId = (int) $tenant->getKey();
         $existing = TenantTelegramBot::query()->first();
         if ($existing !== null && $existing->bot_id !== (int) $botInfo['id']) {
             throw ValidationException::withMessages([
@@ -78,9 +80,6 @@ class TelegramController
         }
 
         $secret = Str::random(48);
-        $webhookUrl = rtrim((string) config('app.url'), '/')
-            ."/api/v1/telegram/python-webhook/{$tenantId}";
-
         try {
             $bot = TenantTelegramBot::query()->updateOrCreate(
                 ['tenant_id' => $tenantId],
@@ -102,11 +101,9 @@ class TelegramController
             ]);
         }
 
-        /** @var Tenant $tenant */
-        $tenant = $request->attributes->get('tenant');
         $this->configureBot($bot, $tenant, $telegramApi);
         $telegramApi->call($token, 'setWebhook', [
-            'url' => $webhookUrl,
+            'url' => $this->webhookUrl($tenant),
             'secret_token' => $secret,
             'allowed_updates' => ['message', 'callback_query'],
         ]);
@@ -144,6 +141,34 @@ class TelegramController
             'data' => [
                 'company_description' => $bot->company_description,
                 'contact_url' => $bot->contact_url,
+            ],
+        ]);
+    }
+
+    public function refreshBot(Request $request, TelegramBotApi $telegramApi): JsonResponse
+    {
+        $this->ensureOwner($request);
+        $bot = TenantTelegramBot::query()->firstOrFail();
+        $secret = Str::random(48);
+
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $this->configureBot($bot, $tenant, $telegramApi);
+        $telegramApi->call($bot->bot_token, 'setWebhook', [
+            'url' => $this->webhookUrl($tenant),
+            'secret_token' => $secret,
+            'allowed_updates' => ['message', 'callback_query'],
+        ]);
+        $bot->update([
+            'webhook_secret_hash' => hash('sha256', $secret),
+            'webhook_ready' => true,
+        ]);
+
+        return response()->json([
+            'data' => [
+                'updated' => true,
+                'username' => $bot->bot_username,
+                'webhook_ready' => $bot->webhook_ready,
             ],
         ]);
     }
@@ -478,6 +503,12 @@ class TelegramController
                 ['command' => 'stop', 'description' => 'Отключить уведомления'],
             ],
         ]);
+    }
+
+    private function webhookUrl(Tenant $tenant): string
+    {
+        return rtrim((string) config('app.url'), '/')
+            ."/api/v1/telegram/python-webhook/{$tenant->getKey()}";
     }
 
     private function workerBot(Request $request, int $tenant): TenantTelegramBot

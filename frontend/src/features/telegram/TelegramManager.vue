@@ -23,6 +23,7 @@ const contactUrl = ref('')
 const broadcastMessage = ref('')
 const loading = ref(true)
 const saving = ref(false)
+const refreshing = ref(false)
 const savingProfile = ref(false)
 const sendingBroadcast = ref(false)
 const error = ref('')
@@ -70,6 +71,22 @@ async function connect(): Promise<void> {
     error.value = getApiProblem(requestError, 'Не удалось подключить Telegram-бота.').message
   } finally {
     saving.value = false
+  }
+}
+
+async function refreshBot(): Promise<void> {
+  refreshing.value = true
+  error.value = ''
+  notice.value = ''
+
+  try {
+    await api.post('/manage/telegram-bot/refresh')
+    notice.value = 'Настройки бота синхронизированы: webhook, команды, меню и описание обновлены.'
+    await load()
+  } catch (requestError) {
+    error.value = getApiProblem(requestError, 'Не удалось обновить настройки бота.').message
+  } finally {
+    refreshing.value = false
   }
 }
 
@@ -171,8 +188,18 @@ onMounted(() => {
           <BaseButton
             v-if="bot?.connected"
             type="button"
+            variant="secondary"
+            :loading="refreshing"
+            :disabled="saving || savingProfile || sendingBroadcast"
+            @click="refreshBot"
+          >
+            Обновить настройки бота
+          </BaseButton>
+          <BaseButton
+            v-if="bot?.connected"
+            type="button"
             variant="ghost"
-            :disabled="saving"
+            :disabled="saving || refreshing"
             @click="disconnect"
           >
             Отключить

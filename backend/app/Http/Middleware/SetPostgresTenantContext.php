@@ -59,7 +59,7 @@ class SetPostgresTenantContext
 
     private function resolveTenantId(Request $request): ?int
     {
-        if (preg_match('#^api/v1/telegram/webhook/([1-9][0-9]*)$#D', $request->path(), $matches) === 1) {
+        if (preg_match('#^api/v1/telegram/internal-webhook/([1-9][0-9]*)$#D', $request->path(), $matches) === 1) {
             return (int) $matches[1];
         }
 

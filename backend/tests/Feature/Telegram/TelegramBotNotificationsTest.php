@@ -103,7 +103,7 @@ it('connects an organization bot and only subscribes the linked Telegram user', 
 
     expect($webhookSecret)->toBeString();
     $this->withHeader('X-Telegram-Bot-Api-Secret-Token', $webhookSecret)
-        ->postJson("/api/v1/telegram/webhook/{$tenant->getKey()}", [
+        ->postJson("/api/v1/telegram/internal-webhook/{$tenant->getKey()}", [
             'message' => [
                 'chat' => ['id' => $telegramId, 'type' => 'private'],
                 'from' => ['id' => $telegramId],
@@ -116,7 +116,7 @@ it('connects an organization bot and only subscribes the linked Telegram user', 
     expect(TelegramSubscription::query()->firstOrFail()->chat_id)->toBe($telegramId);
 
     $this->withHeaders(['X-Telegram-Bot-Api-Secret-Token' => $webhookSecret])
-        ->postJson("/api/v1/telegram/webhook/{$tenant->getKey()}", [
+        ->postJson("/api/v1/telegram/internal-webhook/{$tenant->getKey()}", [
             'message' => [
                 'chat' => ['id' => $telegramId, 'type' => 'private'],
                 'from' => ['id' => $telegramId],
@@ -192,4 +192,57 @@ it('allows an owner to update bot details and queues broadcasts to opted-in chat
             && $job->chatId === 1234
             && $job->message === 'Новая акция',
     );
+});
+
+it('refreshes an organization bot webhook and Telegram configuration', function () {
+    $tenant = TenantFixtures::createTenant('telegram-refresh-tenant');
+    $owner = TenantFixtures::createMember($tenant, role: Role::Owner);
+    $botToken = '123456789:'.str_repeat('d', 32);
+    $webhookRequests = [];
+
+    Http::fake(function (ClientRequest $request) use (&$webhookRequests) {
+        if (str_ends_with($request->url(), '/getMe')) {
+            return Http::response([
+                'ok' => true,
+                'result' => ['id' => 123456789, 'username' => 'tenant_booking_bot'],
+            ]);
+        }
+
+        if (str_ends_with($request->url(), '/setWebhook')) {
+            $webhookRequests[] = $request->data();
+        }
+
+        return Http::response(['ok' => true, 'result' => true]);
+    });
+
+    $headers = ['X-Tenant' => (string) $tenant->getKey()];
+    $this->actingAs($owner)
+        ->withHeaders($headers)
+        ->putJson('/api/v1/manage/telegram-bot', ['token' => $botToken])
+        ->assertOk();
+
+    TenantFixtures::activate($tenant);
+    $oldSecretHash = TenantTelegramBot::query()->firstOrFail()->webhook_secret_hash;
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/manage/telegram-bot/refresh')
+        ->assertOk()
+        ->assertJsonPath('data.updated', true)
+        ->assertJsonPath('data.webhook_ready', true);
+
+    TenantFixtures::activate($tenant);
+    $bot = TenantTelegramBot::query()->firstOrFail();
+    expect($webhookRequests)->toHaveCount(2)
+        ->and($webhookRequests[1]['url'])->toBe(
+            rtrim((string) config('app.url'), '/')
+                ."/api/v1/telegram/python-webhook/{$tenant->getKey()}"
+        )
+        ->and($webhookRequests[1]['secret_token'])->not->toBe('')
+        ->and($bot->webhook_secret_hash)->not->toBe($oldSecretHash)
+        ->and($bot->webhook_secret_hash)->toBe(hash('sha256', $webhookRequests[1]['secret_token']));
+
+    Http::assertSent(fn (ClientRequest $request): bool => str_ends_with($request->url(), '/setMyCommands')
+        && $request->data()['commands'][0]['command'] === 'start');
+    Http::assertSent(fn (ClientRequest $request): bool => str_ends_with($request->url(), '/setChatMenuButton')
+        && $request->data()['menu_button']['type'] === 'web_app');
 });
