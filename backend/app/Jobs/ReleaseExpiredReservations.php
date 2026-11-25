@@ -77,6 +77,11 @@ class ReleaseExpiredReservations implements ShouldQueue
                 $booking->cancelled_at = now();
                 $booking->expires_at = null;
                 $booking->save();
+                SendTelegramNotification::dispatch(
+                    (int) $booking->getKey(),
+                    $this->tenantId,
+                    'booking_cancelled',
+                )->afterCommit();
             });
         } finally {
             if ($hadTenant) {

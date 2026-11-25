@@ -7,6 +7,7 @@ namespace App\Actions\Booking;
 use App\Enums\BookingStatus;
 use App\Enums\PaymentStatus;
 use App\Exceptions\SlotAlreadyTakenException;
+use App\Jobs\SendTelegramNotification;
 use App\Jobs\ReleaseExpiredReservations;
 use App\Models\Booking;
 use App\Models\Payment;
@@ -70,6 +71,17 @@ class CreateBookingAction
                     'expires_at' => $expiresAt,
                 ]);
 
+                $tenantId = (int) app('currentTenant')->getKey();
+                SendTelegramNotification::dispatch(
+                    (int) $booking->getKey(),
+                    $tenantId,
+                    'booking_created',
+                )->afterCommit();
+
+                if (! $requiresDeposit) {
+                    app(ScheduleTelegramReminders::class)->execute($booking);
+                }
+
                 if ($expiresAt !== null) {
                     ReleaseExpiredReservations::dispatch(
                         (int) $booking->getKey(),
@@ -116,9 +128,14 @@ class CreateBookingAction
             ->where('status', BookingStatus::Pending->value)
             ->whereNotNull('expires_at')
             ->where('expires_at', '<=', $now);
+        $expiredBookingIds = (clone $expiredBookings)->pluck('id');
+
+        if ($expiredBookingIds->isEmpty()) {
+            return;
+        }
 
         Payment::query()
-            ->whereIn('booking_id', (clone $expiredBookings)->select('id'))
+            ->whereIn('booking_id', $expiredBookingIds)
             ->where('provider', 'demo')
             ->where('status', PaymentStatus::Pending->value)
             ->update([
@@ -132,5 +149,13 @@ class CreateBookingAction
             'expires_at' => null,
             'updated_at' => $now,
         ]);
+
+        foreach ($expiredBookingIds as $bookingId) {
+            SendTelegramNotification::dispatch(
+                (int) $bookingId,
+                (int) app('currentTenant')->getKey(),
+                'booking_cancelled',
+            )->afterCommit();
+        }
     }
 }

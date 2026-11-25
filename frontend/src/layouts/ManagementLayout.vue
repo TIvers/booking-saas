@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 
+const auth = useAuthStore()
 const tenantStore = useTenantStore()
 const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_enabled ?? false)
 </script>
@@ -23,6 +25,12 @@ const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_ena
       <RouterLink :to="{ name: 'manage-schedule', params: { tenantSlug: tenantStore.slug ?? '' } }">Расписание</RouterLink>
       <RouterLink :to="{ name: 'manage-services', params: { tenantSlug: tenantStore.slug ?? '' } }">Услуги</RouterLink>
       <RouterLink :to="{ name: 'manage-staff', params: { tenantSlug: tenantStore.slug ?? '' } }">Команда</RouterLink>
+      <RouterLink
+        v-if="auth.role === 'owner'"
+        :to="{ name: 'manage-telegram', params: { tenantSlug: tenantStore.slug ?? '' } }"
+      >
+        Telegram
+      </RouterLink>
     </nav>
 
     <p v-if="demoPaymentsEnabled" class="demo-payment-notice" role="note">

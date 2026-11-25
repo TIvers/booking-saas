@@ -26,6 +26,7 @@ jobs:
           DB_APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
           REVERB_APP_KEY: ${{ secrets.REVERB_APP_KEY }}
           REVERB_APP_SECRET: ${{ secrets.REVERB_APP_SECRET }}
+          TELEGRAM_MAIN_BOT_TOKEN: ${{ secrets.TELEGRAM_MAIN_BOT_TOKEN }}
         run: |
           set -euo pipefail
           : "${APP_KEY:?Add the APP_KEY repository secret}"
@@ -43,6 +44,7 @@ jobs:
           sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_APP_PASSWORD}|" backend/.env
           sed -i "s|^REVERB_APP_KEY=.*|REVERB_APP_KEY=${REVERB_APP_KEY}|" backend/.env
           sed -i "s|^REVERB_APP_SECRET=.*|REVERB_APP_SECRET=${REVERB_APP_SECRET}|" backend/.env
+          sed -i "s|^TELEGRAM_MAIN_BOT_TOKEN=.*|TELEGRAM_MAIN_BOT_TOKEN=${TELEGRAM_MAIN_BOT_TOKEN}|" backend/.env
 
       - name: Write deployment variables
         shell: bash

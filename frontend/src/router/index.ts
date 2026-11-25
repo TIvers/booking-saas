@@ -12,6 +12,7 @@ import ManagementLayout from '@/layouts/ManagementLayout.vue'
 import SpecialistLayout from '@/layouts/SpecialistLayout.vue'
 import ServicesManager from '@/features/services/ServicesManager.vue'
 import StaffManager from '@/features/staff/StaffManager.vue'
+import TelegramManager from '@/features/telegram/TelegramManager.vue'
 import LoginView from '@/views/LoginView.vue'
 import UsernameSetupView from '@/views/UsernameSetupView.vue'
 import TenantLandingView from '@/views/TenantLandingView.vue'
@@ -80,6 +81,12 @@ export const router = createRouter({
           name: 'manage-staff',
           component: StaffManager,
         },
+        {
+          path: 'telegram',
+          name: 'manage-telegram',
+          component: TelegramManager,
+          meta: { requiresOwner: true },
+        },
       ],
     },
     {
@@ -118,6 +125,7 @@ export const router = createRouter({
 
 router.beforeEach(async (to) => {
   const requiresManager = to.matched.some((record) => record.meta.requiresManager)
+  const requiresOwner = to.matched.some((record) => record.meta.requiresOwner)
   const requiresSpecialist = to.matched.some((record) => record.meta.requiresSpecialist)
   const requiresCustomer = to.matched.some((record) => record.meta.requiresCustomer)
   const isUsernameSetup = to.name === 'account-username'
@@ -171,6 +179,9 @@ router.beforeEach(async (to) => {
     return auth.role === 'staff'
       ? { name: 'specialist-calendar', params: { tenantSlug } }
       : { name: 'booking', params: { tenantSlug } }
+  }
+  if (requiresOwner && auth.role !== 'owner') {
+    return { name: 'manage-dashboard', params: { tenantSlug } }
   }
   if (requiresSpecialist && auth.role !== 'staff') {
     return auth.canManageTenant

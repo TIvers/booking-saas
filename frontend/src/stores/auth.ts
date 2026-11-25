@@ -102,6 +102,37 @@ export const useAuthStore = defineStore('auth', () => {
     initialized.value = true
   }
 
+  async function loginWithTelegram(initData: string, bot: 'main' | 'tenant'): Promise<boolean> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<AuthPayload | { status: 'unlinked'; name: string }>>(
+      '/auth/telegram',
+      { init_data: initData, bot },
+    )
+    const payload = response.data.data
+
+    if (!('user' in payload)) return false
+
+    setAuth(payload)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+    return true
+  }
+
+  async function registerWithTelegram(initData: string, bot: 'main' | 'tenant'): Promise<void> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<AuthPayload>>('/auth/telegram/register', {
+      init_data: initData,
+      bot,
+    })
+    setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+  }
+
+  async function linkTelegram(initData: string, bot: 'main' | 'tenant'): Promise<void> {
+    await api.post('/auth/telegram/link', { init_data: initData, bot })
+  }
+
   async function updateUsername(username: string): Promise<void> {
     const response = await api.put<ApiResponse<{ username: string }>>('/auth/username', {
       username,
@@ -126,6 +157,9 @@ export const useAuthStore = defineStore('auth', () => {
     loadCurrentUser,
     login,
     register,
+    loginWithTelegram,
+    registerWithTelegram,
+    linkTelegram,
     updateUsername,
     logout,
   }

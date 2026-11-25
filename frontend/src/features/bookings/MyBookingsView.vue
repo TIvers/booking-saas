@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, BookingRecord, PaginatedMeta, Slot } from '@/api/types'
 import { dateInTimezone, formatMoney, formatSlotDateTime, formatSlotTime } from '@/composables/useTimezone'
+import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 
 interface BookingPageResponse extends ApiResponse<BookingRecord[]> {
@@ -12,6 +13,7 @@ interface BookingPageResponse extends ApiResponse<BookingRecord[]> {
 }
 
 const tenant = useTenantStore()
+const auth = useAuthStore()
 const bookings = ref<BookingRecord[]>([])
 const meta = ref<PaginatedMeta | null>(null)
 const status = ref('')
@@ -30,6 +32,17 @@ const rescheduleSlots = ref<Slot[]>([])
 const selectedSlot = ref<Slot | null>(null)
 const searchedRescheduleSlots = ref(false)
 const rescheduleLoading = ref(false)
+const telegramSettings = ref({
+  bot_configured: false,
+  telegram_linked: false,
+  connected: false,
+  remind_24h: true,
+  remind_2h: true,
+})
+const telegramLoading = ref(false)
+const telegramError = ref('')
+const telegramNotice = ref('')
+const telegramWebAppAvailable = computed(() => Boolean(window.Telegram?.WebApp?.initData))
 
 const lastPage = computed(() => meta.value?.last_page ?? 1)
 
@@ -160,8 +173,98 @@ async function saveReschedule(): Promise<void> {
   }
 }
 
+async function loadTelegramSettings(): Promise<void> {
+  try {
+    const response = await api.get<ApiResponse<typeof telegramSettings.value>>('/telegram/subscription')
+    telegramSettings.value = response.data.data
+  } catch (requestError) {
+    telegramError.value = getApiProblem(requestError, 'Не удалось загрузить настройки Telegram.').message
+  }
+}
+
+function refreshTelegramSettings(): void {
+  void loadTelegramSettings()
+}
+
+async function connectTelegramNotifications(): Promise<void> {
+  telegramLoading.value = true
+  telegramError.value = ''
+  telegramNotice.value = ''
+
+  try {
+    const webApp = window.Telegram?.WebApp
+    const bot = new URLSearchParams(window.location.search).get('tg_bot') === 'tenant'
+      ? 'tenant'
+      : 'main'
+
+    if (!telegramSettings.value.telegram_linked && webApp?.initData) {
+      await api.post('/auth/telegram/link', { init_data: webApp.initData, bot })
+      telegramSettings.value.telegram_linked = true
+    }
+
+    if (!telegramSettings.value.telegram_linked) {
+      telegramError.value = 'Сначала войдите через Telegram или откройте кабинет в Telegram WebApp, чтобы связать аккаунты.'
+      return
+    }
+
+    const response = await api.post<ApiResponse<{ url: string }>>('/telegram/subscription')
+    if (webApp) webApp.openTelegramLink(response.data.data.url)
+    else window.open(response.data.data.url, '_blank', 'noopener,noreferrer')
+    telegramNotice.value = 'Откройте Telegram-бота и нажмите Start, чтобы подтвердить подключение.'
+  } catch (requestError) {
+    telegramError.value = getApiProblem(requestError, 'Не удалось подготовить подключение уведомлений.').message
+  } finally {
+    telegramLoading.value = false
+  }
+}
+
+async function saveTelegramPreferences(): Promise<void> {
+  telegramLoading.value = true
+  telegramError.value = ''
+  telegramNotice.value = ''
+
+  try {
+    const response = await api.put<ApiResponse<{
+      connected: boolean
+      remind_24h: boolean
+      remind_2h: boolean
+    }>>('/telegram/subscription', {
+      remind_24h: telegramSettings.value.remind_24h,
+      remind_2h: telegramSettings.value.remind_2h,
+    })
+    Object.assign(telegramSettings.value, response.data.data)
+    telegramNotice.value = 'Настройки уведомлений сохранены.'
+  } catch (requestError) {
+    telegramError.value = getApiProblem(requestError, 'Не удалось сохранить настройки.').message
+  } finally {
+    telegramLoading.value = false
+  }
+}
+
+async function disconnectTelegramNotifications(): Promise<void> {
+  telegramLoading.value = true
+  telegramError.value = ''
+  telegramNotice.value = ''
+
+  try {
+    await api.delete('/telegram/subscription')
+    telegramSettings.value.connected = false
+    telegramNotice.value = 'Уведомления отключены.'
+  } catch (requestError) {
+    telegramError.value = getApiProblem(requestError, 'Не удалось отключить уведомления.').message
+  } finally {
+    telegramLoading.value = false
+  }
+}
+
 onMounted(() => {
   void load()
+  void loadTelegramSettings()
+  window.addEventListener('focus', refreshTelegramSettings)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', refreshTelegramSettings)
 })
 </script>
 
@@ -175,6 +278,46 @@ onMounted(() => {
       </div>
       <span v-if="meta" class="result-count">{{ meta.total }} всего</span>
     </header>
+
+    <section class="telegram-settings" aria-labelledby="telegram-settings-title">
+      <div>
+        <h2 id="telegram-settings-title">Уведомления в Telegram</h2>
+        <p>Напомним о записи за 24 часа и за 2 часа, а также сообщим об отмене или переносе.</p>
+      </div>
+      <p v-if="telegramError" class="message message--error" role="alert">{{ telegramError }}</p>
+      <p v-if="telegramNotice" class="message message--success" role="status">{{ telegramNotice }}</p>
+      <p
+        v-if="telegramSettings.bot_configured && !telegramSettings.telegram_linked && !telegramWebAppAvailable"
+        class="empty-note"
+      >
+        Чтобы связать аккаунты, сначала войдите через Telegram или откройте эту страницу в Telegram WebApp.
+      </p>
+      <p v-if="!telegramSettings.bot_configured" class="empty-note">
+        Организация ещё не подключила Telegram-бота.
+      </p>
+      <template v-else-if="telegramSettings.connected">
+        <label class="telegram-toggle">
+          <input v-model="telegramSettings.remind_24h" type="checkbox" @change="saveTelegramPreferences" />
+          <span>Напоминать за 24 часа</span>
+        </label>
+        <label class="telegram-toggle">
+          <input v-model="telegramSettings.remind_2h" type="checkbox" @change="saveTelegramPreferences" />
+          <span>Напоминать за 2 часа</span>
+        </label>
+        <BaseButton variant="ghost" :disabled="telegramLoading" @click="disconnectTelegramNotifications">
+          Отключить уведомления
+        </BaseButton>
+      </template>
+      <BaseButton
+        v-else-if="auth.role === 'customer'"
+        variant="secondary"
+        :loading="telegramLoading"
+        :disabled="!telegramSettings.telegram_linked && !telegramWebAppAvailable"
+        @click="connectTelegramNotifications"
+      >
+        Подключить Telegram
+      </BaseButton>
+    </section>
 
     <form class="filters" @submit.prevent="load(1)">
       <label>
@@ -385,6 +528,39 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 0.75rem;
   padding: 0.9rem;
+}
+
+.telegram-settings {
+  background: #fff;
+  border: 1px solid #e6ece6;
+  border-radius: 0.9rem;
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+}
+
+.telegram-settings h2 {
+  color: #31574e;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.telegram-settings > div > p {
+  color: #6f7d73;
+  font-size: 0.82rem;
+  margin: 0.35rem 0 0;
+}
+
+.telegram-toggle {
+  align-items: center;
+  color: #526459;
+  display: flex;
+  gap: 0.55rem;
+  font-size: 0.88rem;
+}
+
+.telegram-toggle input {
+  accent-color: #31574e;
 }
 
 .filters label,

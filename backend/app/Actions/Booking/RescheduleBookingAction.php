@@ -7,6 +7,7 @@ namespace App\Actions\Booking;
 use App\Enums\BookingStatus;
 use App\Exceptions\SlotAlreadyTakenException;
 use App\Jobs\ReleaseExpiredReservations;
+use App\Jobs\SendTelegramNotification;
 use App\Models\Booking;
 use App\Models\BookingChange;
 use App\Models\Service;
@@ -92,6 +93,16 @@ class RescheduleBookingAction
                     'reason' => $reason,
                 ]);
 
+                $tenantId = (int) app('currentTenant')->getKey();
+                SendTelegramNotification::dispatch(
+                    (int) $booking->getKey(),
+                    $tenantId,
+                    'booking_rescheduled',
+                )->afterCommit();
+                if ($booking->status === BookingStatus::Confirmed) {
+                    app(ScheduleTelegramReminders::class)->execute($booking);
+                }
+
                 if ($booking->status === BookingStatus::Pending && $booking->expires_at !== null) {
                     ReleaseExpiredReservations::dispatch(
                         (int) $booking->getKey(),
@@ -140,17 +151,30 @@ class RescheduleBookingAction
 
     private function cancelExpiredReservations(Staff $staff, Booking $except, CarbonImmutable $now): void
     {
-        Booking::query()
+        $expiredBookings = Booking::query()
             ->where('staff_id', $staff->getKey())
             ->where('id', '<>', $except->getKey())
             ->where('status', BookingStatus::Pending->value)
             ->whereNotNull('expires_at')
-            ->where('expires_at', '<=', $now)
-            ->update([
-                'status' => BookingStatus::Cancelled->value,
-                'cancelled_at' => $now,
-                'expires_at' => null,
-                'updated_at' => $now,
-            ]);
+            ->where('expires_at', '<=', $now);
+        $expiredIds = (clone $expiredBookings)->pluck('id');
+
+        if ($expiredIds->isEmpty()) {
+            return;
+        }
+
+        $expiredBookings->update([
+            'status' => BookingStatus::Cancelled->value,
+            'cancelled_at' => $now,
+            'expires_at' => null,
+            'updated_at' => $now,
+        ]);
+        foreach ($expiredIds as $bookingId) {
+            SendTelegramNotification::dispatch(
+                (int) $bookingId,
+                (int) app('currentTenant')->getKey(),
+                'booking_cancelled',
+            )->afterCommit();
+        }
     }
 }

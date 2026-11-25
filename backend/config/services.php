@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'telegram' => [
+        'main_bot_token' => env('TELEGRAM_MAIN_BOT_TOKEN'),
+        'init_data_max_age_seconds' => (int) env('TELEGRAM_INIT_DATA_MAX_AGE_SECONDS', 300),
+    ],
+
 ];

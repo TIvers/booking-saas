@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\ServiceController;
 use App\Http\Controllers\Api\V1\SlotController;
 use App\Http\Controllers\Api\V1\StaffController;
 use App\Http\Controllers\Api\V1\TenantOnboardingController;
+use App\Http\Controllers\Api\V1\TelegramController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
@@ -19,6 +20,10 @@ Route::prefix('v1')
         Route::get('/tenant', [AuthController::class, 'tenant']);
         Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:6,1');
         Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:6,1');
+        Route::post('/auth/telegram', [AuthController::class, 'telegram'])->middleware('throttle:10,1');
+        Route::post('/auth/telegram/register', [AuthController::class, 'registerTelegram'])->middleware('throttle:5,1');
+        Route::post('/auth/telegram/link', [AuthController::class, 'linkTelegram'])
+            ->middleware(['auth:sanctum', 'tenant.member', 'throttle:10,1']);
         Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
         Route::get('/auth/me', [AuthController::class, 'me'])
             ->middleware(['auth:sanctum', 'tenant.member']);
@@ -32,6 +37,8 @@ Route::prefix('v1')
         Route::get('/staff', [StaffController::class, 'index']);
         Route::get('/staff/{staff}', [StaffController::class, 'show']);
         Route::get('/slots', [SlotController::class, 'index']);
+        Route::post('/telegram/webhook/{tenant}', [TelegramController::class, 'webhook'])
+            ->whereNumber('tenant');
 
         Route::get('/staff/me/schedule', [ScheduleController::class, 'showMine'])
             ->middleware(['auth:sanctum', 'tenant.member', 'tenant.staff']);
@@ -59,6 +66,9 @@ Route::prefix('v1')
             Route::delete('/staff/{staff}/schedule/exceptions/{date}', [ScheduleController::class, 'destroyException']);
 
             Route::post('/bookings/{booking}/confirm', [BookingController::class, 'confirm']);
+            Route::get('/manage/telegram-bot', [TelegramController::class, 'bot']);
+            Route::put('/manage/telegram-bot', [TelegramController::class, 'connectBot']);
+            Route::delete('/manage/telegram-bot', [TelegramController::class, 'disconnectBot']);
         });
 
         Route::middleware(['auth:sanctum', 'tenant.member'])->group(function (): void {
@@ -69,5 +79,9 @@ Route::prefix('v1')
             Route::post('/bookings/{booking}/reschedule', [BookingController::class, 'reschedule']);
             Route::post('/bookings/{booking}/demo-payment', [DemoPaymentController::class, 'store']);
             Route::post('/bookings/{booking}/demo-payment/result', [DemoPaymentController::class, 'complete']);
+            Route::get('/telegram/subscription', [TelegramController::class, 'subscription']);
+            Route::post('/telegram/subscription', [TelegramController::class, 'connectNotifications']);
+            Route::put('/telegram/subscription', [TelegramController::class, 'updateSubscription']);
+            Route::delete('/telegram/subscription', [TelegramController::class, 'disconnectNotifications']);
         });
     });

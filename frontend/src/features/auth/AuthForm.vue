@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { getApiProblem } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -30,6 +30,11 @@ const busy = ref(false)
 const needsUsernameSetup = ref(false)
 const message = ref('')
 const fieldErrors = ref<Record<string, string[]>>({})
+const pendingTelegramInitData = ref('')
+const telegramAvailable = computed(() => Boolean(window.Telegram?.WebApp?.initData))
+const telegramBot = computed<'main' | 'tenant'>(() =>
+  new URLSearchParams(window.location.search).get('tg_bot') === 'tenant' ? 'tenant' : 'main',
+)
 
 function chooseMode(nextMode: 'login' | 'register'): void {
   mode.value = nextMode
@@ -63,10 +68,60 @@ async function submit(): Promise<void> {
         return
       }
     }
+    if (pendingTelegramInitData.value) {
+      await auth.linkTelegram(pendingTelegramInitData.value, telegramBot.value)
+      pendingTelegramInitData.value = ''
+    }
 
     emit('authenticated')
   } catch (error) {
     const problem = getApiProblem(error, 'Не удалось войти. Проверьте данные и повторите попытку.')
+    message.value = problem.message
+    fieldErrors.value = problem.errors
+  } finally {
+    busy.value = false
+  }
+}
+
+async function signInWithTelegram(): Promise<void> {
+  const initData = window.Telegram?.WebApp?.initData
+  if (!initData) return
+
+  busy.value = true
+  message.value = ''
+  fieldErrors.value = {}
+
+  try {
+    const signedIn = await auth.loginWithTelegram(initData, telegramBot.value)
+    if (signedIn) {
+      emit('authenticated')
+      return
+    }
+
+    pendingTelegramInitData.value = initData
+    mode.value = 'login'
+    message.value = 'Telegram ещё не связан с аккаунтом. Войдите в существующий аккаунт или создайте новый.'
+  } catch (error) {
+    const problem = getApiProblem(error, 'Не удалось войти через Telegram.')
+    message.value = problem.message
+    fieldErrors.value = problem.errors
+  } finally {
+    busy.value = false
+  }
+}
+
+async function createTelegramAccount(): Promise<void> {
+  if (!pendingTelegramInitData.value) return
+
+  busy.value = true
+  message.value = ''
+
+  try {
+    await auth.registerWithTelegram(pendingTelegramInitData.value, telegramBot.value)
+    pendingTelegramInitData.value = ''
+    emit('authenticated')
+  } catch (error) {
+    const problem = getApiProblem(error, 'Не удалось создать аккаунт Telegram.')
     message.value = problem.message
     fieldErrors.value = problem.errors
   } finally {
@@ -81,6 +136,10 @@ async function saveUsername(): Promise<void> {
 
   try {
     await auth.updateUsername(username.value)
+    if (pendingTelegramInitData.value) {
+      await auth.linkTelegram(pendingTelegramInitData.value, telegramBot.value)
+      pendingTelegramInitData.value = ''
+    }
     needsUsernameSetup.value = false
     emit('authenticated')
   } catch (error) {
@@ -141,6 +200,16 @@ async function saveUsername(): Promise<void> {
     </div>
 
     <form class="auth-form__fields" @submit.prevent="submit">
+      <BaseButton
+        v-if="telegramAvailable && !pendingTelegramInitData"
+        type="button"
+        variant="secondary"
+        :loading="busy"
+        class="auth-form__submit"
+        @click="signInWithTelegram"
+      >
+        Продолжить через Telegram
+      </BaseButton>
       <label v-if="mode === 'register'" class="field">
         <span>Ваше имя</span>
         <input v-model.trim="name" autocomplete="name" required maxlength="255" />
@@ -214,6 +283,15 @@ async function saveUsername(): Promise<void> {
 
       <p v-if="message" class="form-message" role="alert">{{ message }}</p>
 
+      <BaseButton
+        v-if="pendingTelegramInitData"
+        type="button"
+        :loading="busy"
+        class="auth-form__submit"
+        @click="createTelegramAccount"
+      >
+        Создать аккаунт через Telegram
+      </BaseButton>
       <BaseButton type="submit" :loading="busy" class="auth-form__submit">
         {{ mode === 'register' ? 'Создать аккаунт и записаться' : 'Войти' }}
       </BaseButton>

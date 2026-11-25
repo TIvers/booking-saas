@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, Booking, DemoPayment, Service, Slot, StaffMember } from '@/api/types'
 import AuthForm from '@/features/auth/AuthForm.vue'
@@ -15,6 +16,7 @@ import { useTenantStore } from '@/stores/tenant'
 const queryClient = useQueryClient()
 const tenantStore = useTenantStore()
 const authStore = useAuthStore()
+const route = useRoute()
 const services = ref<Service[]>([])
 const staff = ref<StaffMember[]>([])
 const catalogLoading = ref(true)
@@ -78,6 +80,13 @@ async function loadCatalog(): Promise<void> {
     ])
     services.value = serviceResponse.data.data
     staff.value = staffResponse.data.data
+    const startParam = window.Telegram?.WebApp?.initDataUnsafe.start_param
+    const telegramServiceId = startParam?.match(/^service-([1-9][0-9]*)$/)?.[1]
+    const queryServiceId = typeof route.query.service === 'string' ? route.query.service : null
+    const requestedServiceId = Number(telegramServiceId ?? queryServiceId)
+    if (Number.isSafeInteger(requestedServiceId) && services.value.some((service) => service.id === requestedServiceId)) {
+      chooseService(requestedServiceId)
+    }
   } catch (error) {
     catalogError.value = getApiProblem(error, 'Не удалось загрузить каталог.').message
   } finally {

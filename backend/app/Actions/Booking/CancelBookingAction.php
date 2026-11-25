@@ -6,6 +6,7 @@ namespace App\Actions\Booking;
 
 use App\Enums\BookingStatus;
 use App\Enums\PaymentStatus;
+use App\Jobs\SendTelegramNotification;
 use App\Models\Booking;
 use App\Models\BookingChange;
 use App\Models\Payment;
@@ -71,6 +72,11 @@ class CancelBookingAction
                 ->where('provider', 'demo')
                 ->where('status', PaymentStatus::Pending->value)
                 ->update(['status' => PaymentStatus::Failed->value, 'updated_at' => $now]);
+            SendTelegramNotification::dispatch(
+                (int) $booking->getKey(),
+                (int) app('currentTenant')->getKey(),
+                'booking_cancelled',
+            )->afterCommit();
 
             return [
                 'booking' => $booking,

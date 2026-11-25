@@ -6,6 +6,7 @@ namespace App\Actions\Booking;
 
 use App\Enums\BookingStatus;
 use App\Enums\PaymentStatus;
+use App\Jobs\SendTelegramNotification;
 use App\Models\Booking;
 use App\Models\Payment;
 use Carbon\CarbonImmutable;
@@ -36,6 +37,14 @@ class ConfirmBookingAction
                 ->where('provider', 'demo')
                 ->where('status', PaymentStatus::Pending->value)
                 ->update(['status' => PaymentStatus::Failed->value, 'updated_at' => now()]);
+
+            $tenantId = (int) app('currentTenant')->getKey();
+            SendTelegramNotification::dispatch(
+                (int) $booking->getKey(),
+                $tenantId,
+                'booking_confirmed',
+            )->afterCommit();
+            app(ScheduleTelegramReminders::class)->execute($booking);
 
             return $booking;
         });

@@ -17,6 +17,8 @@ Initial endpoints:
 - `GET /api/v1/tenant`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
+- `POST /api/v1/auth/telegram` and `/api/v1/auth/telegram/register`
+- `POST /api/v1/auth/telegram/link`
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
 - `PUT /api/v1/auth/username`
@@ -30,9 +32,20 @@ Customers register and sign in with a username unique within their organization;
 email is optional and is not used for new-account sign-in. Owners and managers
 continue to sign in by email. Existing customer and specialist accounts without
 a username can temporarily sign in by email and are prompted to choose a
-username. `user_identities` and the existing email-verification columns are
-schema scaffolding only; external identity providers and verification flows
-are not enabled.
+username. Telegram WebApp sign-in verifies the signed `init_data` on the backend, rejects
+data older than five minutes, and uses the configured main-bot token or the
+organization's connected bot token. Unlinked Telegram users can either sign in
+to an existing customer account and link it or create a customer account.
+Telegram identities are globally unique; an identity can receive a customer
+membership when it opens another organization. Owner/manager accounts cannot
+be linked for Telegram sign-in. Email verification and other external identity
+providers are not enabled.
+
+The main bot token is read from `TELEGRAM_MAIN_BOT_TOKEN`. An organization
+owner can connect one manually-created bot under `PUT /api/v1/manage/telegram-bot`;
+the API validates it with Telegram, stores the token encrypted, configures its
+webhook, and never returns the token. Webhook callbacks are authenticated with
+Telegram's secret-token header and are tenant-scoped.
 
 ## Catalog and schedules
 
@@ -96,6 +109,12 @@ for the same day.
   through `GET /api/v1/staff/me/schedule`. Optional cancellation and rescheduling
   reasons are recorded in booking history and shown to the customer and
   organization managers.
+- Customers can query `GET /api/v1/telegram/subscription`, request a one-time
+  notification deep link with `POST`, update 24-hour/2-hour reminder preferences
+  with `PUT`, and opt out with `DELETE`. The customer must open the bot link and
+  press Start; Telegram does not let bots message users before they initiate a
+  conversation. Confirmation, cancellation, rescheduling, and enabled reminders
+  are delivered through the organization's bot via the queue.
 
 Overlapping reservations are rejected by PostgreSQL's exclusion constraint and
 returned as HTTP 409. Deposit reservations enqueue a delayed, tenant-scoped job
