@@ -320,6 +320,7 @@ onMounted(loadLocations)
             <span>День недели</span>
             <span>Режим работы</span>
             <span>Обед</span>
+            <span>Время обеда</span>
             <span>Открытие</span>
             <span>Закрытие</span>
           </div>
@@ -330,16 +331,16 @@ onMounted(loadLocations)
               <span>Открыт</span>
             </label>
             <template v-if="!day.is_closed">
-              <div class="lunch-cell">
-                <label class="open-toggle">
-                  <input
-                    :checked="hasLunch(day)"
-                    :disabled="!canSetLunch(day)"
-                    type="checkbox"
-                    @change="setLunch(day, $event)"
-                  />
-                  <span>Обед</span>
-                </label>
+              <label class="open-toggle">
+                <input
+                  :checked="hasLunch(day)"
+                  :disabled="!canSetLunch(day)"
+                  type="checkbox"
+                  @change="setLunch(day, $event)"
+                />
+                <span>Обед</span>
+              </label>
+              <div class="lunch-times-cell">
                 <div v-if="hasLunch(day)" class="lunch-times">
                   <input
                     v-model="day.lunch_start_time"
@@ -514,7 +515,7 @@ onMounted(loadLocations)
   align-items: center;
   display: grid;
   gap: 0.65rem;
-  grid-template-columns: minmax(8rem, 1.2fr) minmax(7rem, 0.8fr) minmax(12rem, 1.4fr) repeat(2, minmax(6rem, 0.8fr));
+  grid-template-columns: minmax(8rem, 1.2fr) minmax(7rem, 0.8fr) minmax(5rem, 0.6fr) minmax(11rem, 1.2fr) repeat(2, minmax(6rem, 0.8fr));
 }
 
 .schedule-table__head {
@@ -558,7 +559,7 @@ onMounted(loadLocations)
   padding-left: 0.65rem;
 }
 
-.lunch-cell,
+.lunch-times-cell,
 .lunch-times {
   align-items: center;
   display: flex;
@@ -566,8 +567,12 @@ onMounted(loadLocations)
   gap: 0.4rem;
 }
 
+.lunch-times-cell {
+  min-width: 0;
+}
+
 .lunch-times {
-  flex: 1 1 100%;
+  width: 100%;
 }
 
 .lunch-times .time-input {
@@ -654,7 +659,7 @@ onMounted(loadLocations)
   }
 
   .closed-placeholder,
-  .lunch-cell {
+  .lunch-times-cell {
     grid-column: 1 / -1;
   }
 }
