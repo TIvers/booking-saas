@@ -357,6 +357,7 @@ onMounted(loadLocations)
                     required
                   />
                 </div>
+                <span v-else class="lunch-placeholder">-- --</span>
               </div>
               <input
                 v-model="day.start_time"
@@ -528,6 +529,7 @@ onMounted(loadLocations)
 .schedule-row {
   background: #f8faf7;
   border-radius: 0.65rem;
+  min-height: 3.65rem;
   padding: 0.5rem 0.55rem;
 }
 
@@ -556,7 +558,13 @@ onMounted(loadLocations)
 .closed-placeholder {
   color: #9aa49c;
   grid-column: 3 / -1;
-  padding-left: 0.65rem;
+  text-align: center;
+}
+
+.lunch-placeholder {
+  color: #9aa49c;
+  text-align: center;
+  width: 100%;
 }
 
 .lunch-times-cell,
