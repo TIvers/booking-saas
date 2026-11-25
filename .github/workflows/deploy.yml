@@ -115,6 +115,21 @@ jobs:
       - name: Start containers
         run: docker compose up -d --remove-orphans
 
+      - name: Recreate Telegram webhook services
+        run: docker compose up -d --force-recreate backend-nginx telegram-bot-worker
+
+      - name: Verify Telegram webhook reaches the worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --request POST \
+            http://127.0.0.1:18081/api/v1/telegram/python-webhook/0)"
+          if [[ "$status" != "403" ]]; then
+            echo "Expected worker response 403 without a webhook secret, got HTTP $status" >&2
+            exit 1
+          fi
+
       - name: Run migrations
         shell: bash
         env:
