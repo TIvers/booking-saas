@@ -341,23 +341,28 @@ onMounted(loadLocations)
                 <span>Обед</span>
               </label>
               <div class="lunch-times-cell">
-                <div v-if="hasLunch(day)" class="lunch-times">
-                  <input
-                    v-model="day.lunch_start_time"
-                    class="time-input"
-                    type="time"
-                    :aria-label="`Начало обеда, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
-                    required
-                  />
-                  <input
-                    v-model="day.lunch_end_time"
-                    class="time-input"
-                    type="time"
-                    :aria-label="`Конец обеда, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
-                    required
-                  />
+                <div class="lunch-times">
+                  <template v-if="hasLunch(day)">
+                    <input
+                      v-model="day.lunch_start_time"
+                      class="time-input"
+                      type="time"
+                      :aria-label="`Начало обеда, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                      required
+                    />
+                    <input
+                      v-model="day.lunch_end_time"
+                      class="time-input"
+                      type="time"
+                      :aria-label="`Конец обеда, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                      required
+                    />
+                  </template>
+                  <template v-else>
+                    <span class="lunch-placeholder">--</span>
+                    <span class="lunch-placeholder">--</span>
+                  </template>
                 </div>
-                <span v-else class="lunch-placeholder">-- --</span>
               </div>
               <input
                 v-model="day.start_time"
@@ -563,8 +568,8 @@ onMounted(loadLocations)
 
 .lunch-placeholder {
   color: #9aa49c;
+  flex: 1 1 5rem;
   text-align: center;
-  width: 100%;
 }
 
 .lunch-times-cell,
