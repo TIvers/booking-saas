@@ -31,10 +31,10 @@ it('allows only the tenant owner to update booking policies', function () {
 });
 
 it('applies a service lead-time override instead of the tenant default', function () {
-    $this->travelTo(CarbonImmutable::parse('2026-01-01 00:00:00', 'UTC'));
+    $this->travelTo(CarbonImmutable::parse('2026-01-05 00:00:00', 'UTC'));
     $fixtures = BookingFixtures::bookable();
-    $fixtures['tenant']->update(['booking_lead_time_minutes' => 82 * 60]);
-    $fixtures['service']->update(['booking_lead_time_minutes' => 80 * 60]);
+    $fixtures['tenant']->update(['booking_lead_time_minutes' => 83 * 60]);
+    $fixtures['service']->update(['booking_lead_time_minutes' => 81 * 60]);
     $headers = ['X-Tenant' => (string) $fixtures['tenant']->getKey()];
     $query = http_build_query([
         'staff_id' => $fixtures['staff']->getKey(),
@@ -64,7 +64,7 @@ it('applies a service lead-time override instead of the tenant default', functio
         ])
         ->assertStatus(409);
 
-    $fixtures['service']->update(['booking_lead_time_minutes' => 80 * 60]);
+    $fixtures['service']->update(['booking_lead_time_minutes' => 81 * 60]);
 
     $this->actingAs($fixtures['customer'])
         ->withHeaders($headers)

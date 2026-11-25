@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\BookingSettingsController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DemoPaymentController;
 use App\Http\Controllers\Api\V1\LocationController;
+use App\Http\Controllers\Api\V1\LocationScheduleController;
 use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServiceController;
 use App\Http\Controllers\Api\V1\SlotController;
@@ -56,6 +57,10 @@ Route::prefix('v1')
             Route::get('/manage/dashboard', DashboardController::class);
             Route::get('/manage/booking-settings', [BookingSettingsController::class, 'show']);
             Route::put('/manage/booking-settings', [BookingSettingsController::class, 'update']);
+            Route::get('/manage/locations/{location}/business-schedule', [LocationScheduleController::class, 'show']);
+            Route::put('/manage/locations/{location}/business-schedule', [LocationScheduleController::class, 'update']);
+            Route::post('/manage/locations/{location}/closures', [LocationScheduleController::class, 'storeClosure']);
+            Route::delete('/manage/locations/{location}/closures/{date}', [LocationScheduleController::class, 'destroyClosure']);
             Route::get('/manage/services', [ServiceController::class, 'manageIndex']);
             Route::get('/manage/staff', [StaffController::class, 'manageIndex']);
 

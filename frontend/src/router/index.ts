@@ -4,6 +4,7 @@ import { useTenantStore } from '@/stores/tenant'
 import BookingWizard from '@/features/booking/BookingWizard.vue'
 import BookingSettingsView from '@/features/settings/BookingSettingsView.vue'
 import AccountView from '@/features/account/AccountView.vue'
+import BusinessScheduleView from '@/features/schedule/BusinessScheduleView.vue'
 import BookingsCalendar from '@/features/bookings/BookingsCalendar.vue'
 import BookingsList from '@/features/bookings/BookingsList.vue'
 import MyBookingsView from '@/features/bookings/MyBookingsView.vue'
@@ -78,6 +79,11 @@ export const router = createRouter({
           path: 'schedule',
           name: 'manage-schedule',
           component: ScheduleEditor,
+        },
+        {
+          path: 'business-schedule',
+          name: 'manage-business-schedule',
+          component: BusinessScheduleView,
         },
         {
           path: 'services',

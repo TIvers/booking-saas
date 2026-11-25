@@ -22,6 +22,7 @@ const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_ena
       <RouterLink :to="{ name: 'manage-dashboard', params: { tenantSlug: tenantStore.slug ?? '' } }">Обзор</RouterLink>
       <RouterLink :to="{ name: 'manage-calendar', params: { tenantSlug: tenantStore.slug ?? '' } }">Календарь</RouterLink>
       <RouterLink :to="{ name: 'manage-bookings', params: { tenantSlug: tenantStore.slug ?? '' } }">Записи</RouterLink>
+      <RouterLink :to="{ name: 'manage-business-schedule', params: { tenantSlug: tenantStore.slug ?? '' } }">График заведения</RouterLink>
       <RouterLink :to="{ name: 'manage-schedule', params: { tenantSlug: tenantStore.slug ?? '' } }">Расписание</RouterLink>
       <RouterLink :to="{ name: 'manage-services', params: { tenantSlug: tenantStore.slug ?? '' } }">Услуги</RouterLink>
       <RouterLink :to="{ name: 'manage-staff', params: { tenantSlug: tenantStore.slug ?? '' } }">Команда</RouterLink>

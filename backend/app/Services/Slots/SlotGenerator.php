@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Slots;
 
 use App\Models\Booking;
+use App\Models\LocationScheduleClosure;
+use App\Models\LocationWorkSchedule;
 use App\Models\ScheduleBreak;
 use App\Models\ScheduleException;
 use App\Models\Service;
@@ -59,6 +61,8 @@ final class SlotGenerator
         $weekday = $localStart->dayOfWeekIso; // 1 (пн) ... 7 (вс)
 
         $workRanges = $this->resolveWorkRanges($staff, $day, $weekday);
+        $locationRanges = $this->resolveLocationWorkRanges($staff, $day, $weekday);
+        $workRanges = $this->intersectRanges($workRanges, $locationRanges);
 
         if ($workRanges === []) {
             return [];
@@ -186,6 +190,61 @@ final class SlotGenerator
             ->get(['start_time', 'end_time'])
             ->map(fn (WorkSchedule $w): array => [(string) $w->start_time, (string) $w->end_time])
             ->all();
+    }
+
+    /**
+     * @return list<array{0: string, 1: string}>
+     */
+    private function resolveLocationWorkRanges(Staff $staff, string $day, int $weekday): array
+    {
+        if (
+            LocationScheduleClosure::query()
+                ->where('location_id', $staff->location_id)
+                ->whereDate('date', $day)
+                ->exists()
+        ) {
+            return [];
+        }
+
+        $schedule = LocationWorkSchedule::query()
+            ->where('location_id', $staff->location_id)
+            ->where('weekday', $weekday)
+            ->first();
+
+        if ($schedule === null) {
+            return $weekday <= 5 ? [['10:00', '18:00']] : [];
+        }
+
+        if ($schedule->is_closed || $schedule->start_time === null || $schedule->end_time === null) {
+            return [];
+        }
+
+        return [[(string) $schedule->start_time, (string) $schedule->end_time]];
+    }
+
+    /**
+     * @param  list<array{0: string, 1: string}>  $staffRanges
+     * @param  list<array{0: string, 1: string}>  $locationRanges
+     * @return list<array{0: string, 1: string}>
+     */
+    private function intersectRanges(array $staffRanges, array $locationRanges): array
+    {
+        $intersections = [];
+
+        foreach ($staffRanges as [$staffStart, $staffEnd]) {
+            foreach ($locationRanges as [$locationStart, $locationEnd]) {
+                $start = max($staffStart, $locationStart);
+                $end = min($staffEnd, $locationEnd);
+
+                if ($start < $end) {
+                    $intersections[] = [$start, $end];
+                }
+            }
+        }
+
+        usort($intersections, static fn (array $left, array $right): int => strcmp($left[0], $right[0]));
+
+        return $intersections;
     }
 
     /**

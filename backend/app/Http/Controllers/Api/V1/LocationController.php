@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Location;
+use App\Models\LocationWorkSchedule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LocationController
 {
@@ -31,7 +33,12 @@ class LocationController
         ]);
         $data['timezone'] ??= 'UTC';
 
-        $location = Location::query()->create($data);
+        $location = DB::transaction(function () use ($data): Location {
+            $location = Location::query()->create($data);
+            $location->workSchedules()->createMany(LocationWorkSchedule::defaultWeek());
+
+            return $location;
+        });
 
         return response()->json(['data' => $location], 201);
     }

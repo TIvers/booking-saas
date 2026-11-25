@@ -22,4 +22,14 @@ class Location extends Model
     {
         return $this->hasMany(Staff::class);
     }
+
+    public function workSchedules(): HasMany
+    {
+        return $this->hasMany(LocationWorkSchedule::class);
+    }
+
+    public function scheduleClosures(): HasMany
+    {
+        return $this->hasMany(LocationScheduleClosure::class);
+    }
 }

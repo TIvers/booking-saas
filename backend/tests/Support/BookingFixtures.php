@@ -55,6 +55,10 @@ final class BookingFixtures
         $staff->services()->attach($service->getKey());
 
         $date = CarbonImmutable::now('UTC')->addDays(3)->startOfDay();
+        while ($date->dayOfWeekIso > 5) {
+            $date = $date->addDay();
+        }
+
         WorkSchedule::query()->create([
             'staff_id' => $staff->getKey(),
             'weekday' => $date->dayOfWeekIso,
@@ -68,7 +72,7 @@ final class BookingFixtures
             'customer' => $customer,
             'service' => $service,
             'staff' => $staff,
-            'starts_at' => $date->addHours(9),
+            'starts_at' => $date->addHours(10),
         ];
     }
 }
