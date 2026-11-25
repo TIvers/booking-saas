@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { getApiProblem } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const name = ref(auth.user?.name ?? '')
-const phone = ref(auth.user?.phone ?? '')
+const phone = ref(formatRussianPhone(auth.user?.phone ?? ''))
 const email = ref(auth.user?.email ?? '')
 const profileBusy = ref(false)
 const emailBusy = ref(false)
@@ -23,11 +23,62 @@ const telegramBot = computed<'main' | 'tenant'>(() =>
   new URLSearchParams(window.location.search).get('tg_bot') === 'tenant' ? 'tenant' : 'main',
 )
 
+function formatRussianPhone(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (!digits) return ''
+
+  const normalized = digits.startsWith('8')
+    ? `7${digits.slice(1)}`
+    : digits.startsWith('7')
+      ? digits
+      : `7${digits}`
+  const national = normalized.slice(1, 11)
+  let formatted = '+7'
+
+  if (national.length > 0) formatted += ` (${national.slice(0, 3)}`
+  if (national.length >= 3) formatted += ')'
+  if (national.length > 3) formatted += ` ${national.slice(3, 6)}`
+  if (national.length > 6) formatted += `-${national.slice(6, 8)}`
+  if (national.length > 8) formatted += `-${national.slice(8, 10)}`
+
+  return formatted
+}
+
+function onPhoneInput(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const rawValue = input.value
+  const cursor = input.selectionStart ?? rawValue.length
+  const digitsBeforeCursor = (rawValue.slice(0, cursor).match(/\d/g) ?? []).length
+  const digits = rawValue.replace(/\D/g, '')
+  const trimmedValue = rawValue.trimStart()
+  const hasCountryPrefix = trimmedValue.startsWith('+7')
+    || (!trimmedValue.startsWith('+') && (digits.startsWith('7') || digits.startsWith('8')))
+  const nationalDigitsBeforeCursor = Math.max(
+    0,
+    digitsBeforeCursor - (hasCountryPrefix ? 1 : 0),
+  )
+
+  phone.value = formatRussianPhone(rawValue)
+  const targetDigitCount = 1 + nationalDigitsBeforeCursor
+  let nextCursor = phone.value.length
+  let digitCount = 0
+
+  for (let index = 0; index < phone.value.length; index += 1) {
+    if (/\d/.test(phone.value[index])) digitCount += 1
+    if (digitCount >= targetDigitCount) {
+      nextCursor = index + 1
+      break
+    }
+  }
+
+  void nextTick(() => input.setSelectionRange(nextCursor, nextCursor))
+}
+
 watch(
   () => auth.user?.id,
   () => {
     name.value = auth.user?.name ?? ''
-    phone.value = auth.user?.phone ?? ''
+    phone.value = formatRussianPhone(auth.user?.phone ?? '')
     email.value = auth.user?.email ?? ''
   },
   { immediate: true },
@@ -101,13 +152,16 @@ async function connectTelegram(): Promise<void> {
         <label class="field">
           <span>Номер телефона</span>
           <input
-            v-model.trim="phone"
+            :value="phone"
             type="tel"
             maxlength="32"
             autocomplete="tel"
-            placeholder="+7 900 000-00-00"
+            placeholder="+7 (900) 000-00-00"
+            @input="onPhoneInput"
           />
-          <small>Номер сохранится в профиле; подтверждение по SMS пока не используется.</small>
+          <small>
+            Формат российского номера: +7 (900) 000-00-00. Подтверждение по SMS пока не используется.
+          </small>
         </label>
         <p v-if="profileError" class="message message--error" role="alert">{{ profileError }}</p>
         <p v-if="profileMessage" class="message message--success" role="status">{{ profileMessage }}</p>
