@@ -319,9 +319,9 @@ onMounted(loadLocations)
           <div class="schedule-table__head">
             <span>День недели</span>
             <span>Режим работы</span>
+            <span>Обед</span>
             <span>Открытие</span>
             <span>Закрытие</span>
-            <span>Обед</span>
           </div>
           <div v-for="day in workSchedules" :key="day.weekday" class="schedule-row">
             <strong>{{ weekdays.find((item) => item.value === day.weekday)?.label }}</strong>
@@ -330,20 +330,6 @@ onMounted(loadLocations)
               <span>Открыт</span>
             </label>
             <template v-if="!day.is_closed">
-              <input
-                v-model="day.start_time"
-                class="time-input"
-                type="time"
-                :aria-label="`Открытие, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
-                required
-              />
-              <input
-                v-model="day.end_time"
-                class="time-input"
-                type="time"
-                :aria-label="`Закрытие, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
-                required
-              />
               <div class="lunch-cell">
                 <label class="open-toggle">
                   <input
@@ -371,6 +357,20 @@ onMounted(loadLocations)
                   />
                 </div>
               </div>
+              <input
+                v-model="day.start_time"
+                class="time-input"
+                type="time"
+                :aria-label="`Открытие, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                required
+              />
+              <input
+                v-model="day.end_time"
+                class="time-input"
+                type="time"
+                :aria-label="`Закрытие, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                required
+              />
             </template>
             <span v-else class="closed-placeholder">Выходной</span>
           </div>
@@ -514,7 +514,7 @@ onMounted(loadLocations)
   align-items: center;
   display: grid;
   gap: 0.65rem;
-  grid-template-columns: minmax(8rem, 1.2fr) minmax(7rem, 0.8fr) repeat(2, minmax(6rem, 0.8fr)) minmax(12rem, 1.4fr);
+  grid-template-columns: minmax(8rem, 1.2fr) minmax(7rem, 0.8fr) minmax(12rem, 1.4fr) repeat(2, minmax(6rem, 0.8fr));
 }
 
 .schedule-table__head {
