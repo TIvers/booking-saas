@@ -23,8 +23,10 @@ it('connects an organization bot and only subscribes the linked Telegram user', 
     $owner = TenantFixtures::createMember($tenant, role: Role::Owner);
     $customer = TenantFixtures::createMember($tenant, role: Role::Customer);
     $botToken = '123456789:'.str_repeat('b', 32);
+    $telegramProxyBase = 'https://tg-proxy.test';
     $telegramId = 987654321;
     $webhookSecret = null;
+    config()->set('services.telegram.api_base', $telegramProxyBase);
 
     Http::fake(function (ClientRequest $request) use (&$webhookSecret) {
         if (str_ends_with($request->url(), '/getMe')) {
@@ -51,7 +53,7 @@ it('connects an organization bot and only subscribes the linked Telegram user', 
         ->assertJsonMissing(['token' => $botToken]);
 
     Http::assertSent(fn (ClientRequest $request): bool => str_ends_with($request->url(), '/setWebhook')
-        && $request->data()['url'] === rtrim((string) config('app.url'), '/')
+        && $request->data()['url'] === rtrim($telegramProxyBase, '/')
             ."/api/v1/telegram/python-webhook/{$tenant->getKey()}"
         && in_array('callback_query', $request->data()['allowed_updates'], true));
     Http::assertSent(fn (ClientRequest $request): bool => str_ends_with($request->url(), '/setChatMenuButton')
@@ -70,6 +72,7 @@ it('connects an organization bot and only subscribes the linked Telegram user', 
         ->getJson($workerConfigUrl)
         ->assertOk()
         ->assertJsonPath('data.bot_token', $botToken)
+        ->assertJsonPath('data.api_base', $telegramProxyBase)
         ->assertHeader('Cache-Control', 'no-store, private');
 
     TenantFixtures::activate($tenant);
@@ -234,7 +237,7 @@ it('refreshes an organization bot webhook and Telegram configuration', function 
     $bot = TenantTelegramBot::query()->firstOrFail();
     expect($webhookRequests)->toHaveCount(2)
         ->and($webhookRequests[1]['url'])->toBe(
-            rtrim((string) config('app.url'), '/')
+            rtrim((string) config('services.telegram.api_base'), '/')
                 ."/api/v1/telegram/python-webhook/{$tenant->getKey()}"
         )
         ->and($webhookRequests[1]['secret_token'])->not->toBe('')

@@ -53,12 +53,14 @@ The proxy accepts both current and previous public webhook paths, so existing
 bots can be synchronized to the Python worker without reconnecting. The worker
 forwards booking-notification commands to a separate internal Laravel endpoint.
 
-Bot API requests use `TG_API_BASE` (default: the configured Telegram proxy).
-Both Laravel and the Python worker use this URL; the server does not fall back
-to `api.telegram.org`. The proxy receives bot tokens as part of Bot API request
-URLs. Marketing
-broadcasts use a separate tenant-scoped subscription, distinct from booking
-notification consent, and are queued through Horizon.
+Bot API requests use `TG_API_BASE`; Laravel and the Python worker do not fall
+back to `api.telegram.org`. Webhook registration uses the same base URL, and the
+proxy forwards webhook paths to the public application URL while preserving
+Telegram's secret header. The Cloudflare Worker implementation is in
+`telegram-worker/cloudflare-proxy.js`. Deploy that Worker before refreshing
+connected bots. The proxy receives bot tokens as part of Bot API request URLs.
+Marketing broadcasts use a separate tenant-scoped subscription, distinct from
+booking notification consent, and are queued through Horizon.
 
 ## Catalog and schedules
 

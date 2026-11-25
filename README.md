@@ -49,9 +49,13 @@ npm run dev
 запускается вместе с Docker при старте production-сервера. Создать новых
 Telegram-ботов через Telegram Bot API нельзя. Для прямых ссылок `startapp`
 настройте Main Mini App в @BotFather; в кабинете будут доступны ссылки на услуги.
-В production вызовы Bot API идут через `TG_API_BASE`; запрос включает bot token,
-поэтому используйте только доверенный proxy. Для локального запуска по умолчанию
-используется `https://api.telegram.org`.
+Вызовы Bot API и входящие webhook отдельного бота проходят через Worker,
+указанный в `TG_API_BASE`. Worker перенаправляет `/bot...` в Telegram Bot API,
+а `/api/v1/telegram/python-webhook/{tenant}` — на `https://booking.iversdev.ru`,
+сохраняя заголовок проверки webhook. Исходный код Worker находится в
+`telegram-worker/cloudflare-proxy.js`; после его обновления нужно обновить webhook
+бота из кабинета. Запросы Bot API включают bot token, поэтому используйте только
+доверенный proxy.
 
 Клиент связывает сайт-аккаунт с Telegram из Mini App или создаёт клиентский
 аккаунт через Telegram. Для уведомлений клиент отдельно нажимает «Подключить

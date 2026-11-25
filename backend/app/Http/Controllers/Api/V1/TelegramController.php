@@ -507,7 +507,7 @@ class TelegramController
 
     private function webhookUrl(Tenant $tenant): string
     {
-        return rtrim((string) config('app.url'), '/')
+        return rtrim((string) config('services.telegram.api_base'), '/')
             ."/api/v1/telegram/python-webhook/{$tenant->getKey()}";
     }
 
