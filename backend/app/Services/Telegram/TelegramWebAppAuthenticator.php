@@ -25,16 +25,36 @@ class TelegramWebAppAuthenticator
             }
         }
 
-        $botToken = $this->botToken($botSource);
         unset($data['hash']);
         ksort($data, SORT_STRING);
         $checkString = collect($data)
             ->map(fn (mixed $value, string $key): string => $key.'='.$value)
             ->implode("\n");
-        $secretKey = hash_hmac('sha256', $botToken, 'WebAppData', true);
-        $expectedHash = hash_hmac('sha256', $checkString, $secretKey);
 
-        if (! hash_equals($expectedHash, $hash)) {
+        $sources = [$botSource, $botSource === 'main' ? 'tenant' : 'main'];
+        $botTokens = collect($sources)
+            ->map(fn (string $source): ?string => $this->botToken($source))
+            ->filter(fn (?string $token): bool => is_string($token) && $token !== '')
+            ->unique()
+            ->all();
+
+        if ($botTokens === []) {
+            throw ValidationException::withMessages([
+                'bot' => ['Telegram authentication is not configured for this organization.'],
+            ]);
+        }
+
+        $validSignature = false;
+        foreach ($botTokens as $botToken) {
+            $secretKey = hash_hmac('sha256', $botToken, 'WebAppData', true);
+            $expectedHash = hash_hmac('sha256', $checkString, $secretKey);
+            if (hash_equals($expectedHash, $hash)) {
+                $validSignature = true;
+                break;
+            }
+        }
+
+        if (! $validSignature) {
             $this->invalidData();
         }
 
@@ -73,7 +93,7 @@ class TelegramWebAppAuthenticator
         );
     }
 
-    private function botToken(string $botSource): string
+    private function botToken(string $botSource): ?string
     {
         if ($botSource === 'main') {
             $token = config('services.telegram.main_bot_token');
@@ -81,16 +101,10 @@ class TelegramWebAppAuthenticator
             $bot = TenantTelegramBot::query()->where('webhook_ready', true)->first();
             $token = $bot?->bot_token;
         } else {
-            $token = null;
+            return null;
         }
 
-        if (! is_string($token) || $token === '') {
-            throw ValidationException::withMessages([
-                'bot' => ['Telegram authentication is not configured for this organization.'],
-            ]);
-        }
-
-        return $token;
+        return is_string($token) && $token !== '' ? $token : null;
     }
 
     private function invalidData(): never

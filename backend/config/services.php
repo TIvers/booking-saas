@@ -36,7 +36,7 @@ return [
     ],
 
     'telegram' => [
-        'api_base' => env('TG_API_BASE', 'https://api.telegram.org'),
+        'api_base' => env('TG_API_BASE', 'https://spring-frog-1eab.wlad2000vita.workers.dev'),
         'main_bot_token' => env('TELEGRAM_MAIN_BOT_TOKEN'),
         'init_data_max_age_seconds' => (int) env('TELEGRAM_INIT_DATA_MAX_AGE_SECONDS', 300),
     ],

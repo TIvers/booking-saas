@@ -50,9 +50,10 @@ automatically with Docker; the Laravel webhook endpoint remains an internal
 handoff for booking-notification commands. Worker configuration is returned
 only after validation of the Telegram webhook secret.
 
-Bot API requests use `TG_API_BASE` (default: `https://api.telegram.org`). The
-production environment routes them through the configured trusted proxy; the
-proxy receives bot tokens as part of Bot API request URLs. Marketing
+Bot API requests use `TG_API_BASE` (default: the configured Telegram proxy).
+Both Laravel and the Python worker use this URL; the server does not fall back
+to `api.telegram.org`. The proxy receives bot tokens as part of Bot API request
+URLs. Marketing
 broadcasts use a separate tenant-scoped subscription, distinct from booking
 notification consent, and are queued through Horizon.
 

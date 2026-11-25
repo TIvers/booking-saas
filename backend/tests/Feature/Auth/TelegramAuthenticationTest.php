@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\Role;
+use App\Models\TenantTelegramBot;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Tests\Support\TenantFixtures;
 
@@ -98,6 +99,30 @@ it('links Telegram to an existing customer account and signs it in', function ()
         ->assertOk()
         ->assertJsonPath('data.user.id', $customer->getKey())
         ->assertJsonPath('data.role', 'customer');
+});
+
+it('verifies Telegram authorization with the tenant bot when the launch URL omits its source', function () {
+    $tenant = TenantFixtures::createTenant('telegram-tenant-bot');
+    $tenantBotToken = '987654321:'.str_repeat('b', 32);
+    TenantFixtures::activate($tenant);
+    TenantTelegramBot::query()->create([
+        'bot_id' => 987654321,
+        'bot_username' => 'tenant_bot',
+        'bot_token' => $tenantBotToken,
+        'webhook_secret_hash' => hash('sha256', 'webhook-secret'),
+        'webhook_ready' => true,
+    ]);
+
+    $this->withHeaders([
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ])
+        ->postJson('/api/v1/auth/telegram', [
+            'init_data' => signedTelegramInitData($tenantBotToken, 321654987, time()),
+            'bot' => 'main',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.status', 'unlinked');
 });
 
 it('rejects expired Telegram WebApp authorization data', function () {
