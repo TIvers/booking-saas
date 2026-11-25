@@ -213,6 +213,36 @@ class AuthController
         return response()->json(['data' => ['username' => $membership->username]]);
     }
 
+    public function updateEmail(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $data = $request->validate([
+            'email' => [
+                'required',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')->ignore($user->getKey()),
+            ],
+        ]);
+
+        try {
+            $user->email = $data['email'];
+            $user->email_verified_at = null;
+            $user->save();
+        } catch (QueryException $exception) {
+            if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
+                throw $exception;
+            }
+
+            throw ValidationException::withMessages([
+                'email' => ['The email address is already registered.'],
+            ]);
+        }
+
+        return response()->json(['data' => ['email' => $user->email]]);
+    }
+
     public function telegram(Request $request, TelegramWebAppAuthenticator $authenticator): JsonResponse
     {
         $data = $request->validate([
@@ -418,8 +448,8 @@ class AuthController
         User $user,
         Tenant $tenant,
         ?Membership $membership = null,
-    ): array
-    {
+    ): array {
+        $this->allowTelegramIdentityLookup();
         $membership ??= Membership::query()
             ->where('user_id', $user->getAuthIdentifier())
             ->firstOrFail();
@@ -430,6 +460,9 @@ class AuthController
                 'name' => $user->name,
                 'email' => $user->email,
                 'username' => $membership->username,
+                'telegram_linked' => $user->identities()
+                    ->where('provider', 'telegram')
+                    ->exists(),
             ],
             'tenant' => [
                 'id' => $tenant->getKey(),

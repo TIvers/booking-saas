@@ -29,6 +29,8 @@ Route::prefix('v1')
             ->middleware(['auth:sanctum', 'tenant.member']);
         Route::put('/auth/username', [AuthController::class, 'updateUsername'])
             ->middleware(['auth:sanctum', 'tenant.member']);
+        Route::put('/auth/email', [AuthController::class, 'updateEmail'])
+            ->middleware(['auth:sanctum', 'tenant.member']);
 
         Route::get('/locations', [LocationController::class, 'index']);
         Route::get('/locations/{location}', [LocationController::class, 'show']);

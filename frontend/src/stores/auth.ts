@@ -9,6 +9,7 @@ export interface AuthUser {
   name: string
   email: string | null
   username: string | null
+  telegram_linked: boolean
 }
 
 interface AuthPayload {
@@ -28,7 +29,10 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => user.value !== null)
   const canManageTenant = computed(() => role.value === 'owner' || role.value === 'manager')
   const requiresUsername = computed(
-    () => (role.value === 'customer' || role.value === 'staff') && user.value?.username === null,
+    () => (role.value === 'customer' || role.value === 'staff')
+      && user.value !== null
+      && user.value.username === null
+      && !user.value.telegram_linked,
   )
 
   function setAuth(payload: AuthPayload): void {
@@ -131,6 +135,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function linkTelegram(initData: string, bot: 'main' | 'tenant'): Promise<void> {
     await api.post('/auth/telegram/link', { init_data: initData, bot })
+    if (user.value) user.value.telegram_linked = true
+  }
+
+  async function updateEmail(email: string): Promise<void> {
+    const response = await api.put<ApiResponse<{ email: string }>>('/auth/email', { email })
+    if (user.value) user.value.email = response.data.data.email
   }
 
   async function updateUsername(username: string): Promise<void> {
@@ -160,6 +170,7 @@ export const useAuthStore = defineStore('auth', () => {
     loginWithTelegram,
     registerWithTelegram,
     linkTelegram,
+    updateEmail,
     updateUsername,
     logout,
   }

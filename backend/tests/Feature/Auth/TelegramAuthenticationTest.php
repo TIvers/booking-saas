@@ -62,7 +62,19 @@ it('registers a customer from valid Telegram WebApp authorization data', functio
         ->assertCreated()
         ->assertJsonPath('data.role', 'customer')
         ->assertJsonPath('data.user.email', null)
-        ->assertJsonPath('data.user.username', null);
+        ->assertJsonPath('data.user.username', null)
+        ->assertJsonPath('data.user.telegram_linked', true);
+
+    $this->withHeaders($headers)
+        ->putJson('/api/v1/auth/email', ['email' => 'telegram-recovery@example.test'])
+        ->assertOk()
+        ->assertJsonPath('data.email', 'telegram-recovery@example.test');
+
+    $this->withHeaders($headers)
+        ->getJson('/api/v1/auth/me')
+        ->assertOk()
+        ->assertJsonPath('data.user.username', null)
+        ->assertJsonPath('data.user.telegram_linked', true);
 });
 
 it('links Telegram to an existing customer account and signs it in', function () {

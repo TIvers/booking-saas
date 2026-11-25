@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const isTelegramWebApp = computed(() => Boolean(window.Telegram?.WebApp?.initData))
 const isManagementRedirect = computed(() => {
   const redirect = route.query.redirect
   const tenantSlug = route.params.tenantSlug
@@ -44,7 +45,7 @@ function afterAuthentication(): void {
       <p>Аккаунт нужен, чтобы сохранить запись и управлять ею.</p>
     </div>
     <AuthForm
-      :initial-mode="isManagementRedirect ? 'login' : 'register'"
+      :initial-mode="isManagementRedirect || isTelegramWebApp ? 'login' : 'register'"
       @authenticated="afterAuthentication"
     />
   </section>

@@ -4,21 +4,18 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { getApiProblem } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 
-const props = withDefaults(
-  defineProps<{
-    initialMode?: 'login' | 'register'
-  }>(),
-  {
-    initialMode: 'register',
-  },
-)
+const props = defineProps<{
+  initialMode?: 'login' | 'register'
+}>()
 
 const emit = defineEmits<{
   authenticated: []
 }>()
 
 const auth = useAuthStore()
-const mode = ref<'login' | 'register'>(props.initialMode)
+const mode = ref<'login' | 'register'>(
+  props.initialMode ?? (window.Telegram?.WebApp?.initData ? 'login' : 'register'),
+)
 const name = ref('')
 const username = ref('')
 const email = ref('')
@@ -28,6 +25,8 @@ const passwordConfirmation = ref('')
 const remember = ref(true)
 const busy = ref(false)
 const needsUsernameSetup = ref(false)
+const showRecoveryEmailPrompt = ref(false)
+const recoveryEmail = ref('')
 const message = ref('')
 const fieldErrors = ref<Record<string, string[]>>({})
 const pendingTelegramInitData = ref('')
@@ -62,15 +61,19 @@ async function submit(): Promise<void> {
         password: password.value,
         remember: remember.value,
       })
-      if (auth.requiresUsername) {
-        needsUsernameSetup.value = true
-        message.value = ''
-        return
-      }
     }
     if (pendingTelegramInitData.value) {
       await auth.linkTelegram(pendingTelegramInitData.value, telegramBot.value)
       pendingTelegramInitData.value = ''
+      if (auth.user?.email === null) {
+        showRecoveryEmailPrompt.value = true
+        return
+      }
+    }
+    if (auth.requiresUsername) {
+      needsUsernameSetup.value = true
+      message.value = ''
+      return
     }
 
     emit('authenticated')
@@ -94,6 +97,10 @@ async function signInWithTelegram(): Promise<void> {
   try {
     const signedIn = await auth.loginWithTelegram(initData, telegramBot.value)
     if (signedIn) {
+      if (auth.user?.email === null) {
+        showRecoveryEmailPrompt.value = true
+        return
+      }
       emit('authenticated')
       return
     }
@@ -119,6 +126,10 @@ async function createTelegramAccount(): Promise<void> {
   try {
     await auth.registerWithTelegram(pendingTelegramInitData.value, telegramBot.value)
     pendingTelegramInitData.value = ''
+    if (auth.user?.email === null) {
+      showRecoveryEmailPrompt.value = true
+      return
+    }
     emit('authenticated')
   } catch (error) {
     const problem = getApiProblem(error, 'Не удалось создать аккаунт Telegram.')
@@ -127,6 +138,29 @@ async function createTelegramAccount(): Promise<void> {
   } finally {
     busy.value = false
   }
+}
+
+async function saveRecoveryEmail(): Promise<void> {
+  busy.value = true
+  message.value = ''
+  fieldErrors.value = {}
+
+  try {
+    await auth.updateEmail(recoveryEmail.value.trim())
+    showRecoveryEmailPrompt.value = false
+    emit('authenticated')
+  } catch (error) {
+    const problem = getApiProblem(error, 'Не удалось сохранить email.')
+    message.value = problem.message
+    fieldErrors.value = problem.errors
+  } finally {
+    busy.value = false
+  }
+}
+
+function continueWithoutEmail(): void {
+  showRecoveryEmailPrompt.value = false
+  emit('authenticated')
 }
 
 async function saveUsername(): Promise<void> {
@@ -154,7 +188,42 @@ async function saveUsername(): Promise<void> {
 
 <template>
   <section class="auth-form">
-    <form v-if="needsUsernameSetup" class="auth-form__fields" @submit.prevent="saveUsername">
+    <form
+      v-if="showRecoveryEmailPrompt"
+      class="auth-form__fields recovery-email-form"
+      @submit.prevent="saveRecoveryEmail"
+    >
+      <p class="form-message form-message--info">
+        Вы вошли через Telegram. Добавьте email в профиль или продолжите без него.
+      </p>
+      <label class="field">
+        <span>Email (необязательно)</span>
+        <input
+          v-model.trim="recoveryEmail"
+          type="email"
+          required
+          maxlength="255"
+          autocomplete="email"
+          autofocus
+        />
+        <small v-if="fieldErrors.email">{{ fieldErrors.email[0] }}</small>
+      </label>
+      <p v-if="message" class="form-message" role="alert">{{ message }}</p>
+      <BaseButton type="submit" :loading="busy" class="auth-form__submit">
+        Сохранить email
+      </BaseButton>
+      <BaseButton
+        type="button"
+        variant="secondary"
+        :disabled="busy"
+        class="auth-form__submit"
+        @click="continueWithoutEmail"
+      >
+        Продолжить без email
+      </BaseButton>
+    </form>
+
+    <form v-else-if="needsUsernameSetup" class="auth-form__fields" @submit.prevent="saveUsername">
       <p class="form-message form-message--info">
         Для входа по логину создайте его для существующего аккаунта. До этого вход выполнен по email.
       </p>
