@@ -48,6 +48,26 @@ it('returns monthly booking metrics to a tenant manager only', function () {
         ->assertForbidden();
 });
 
+it('keeps started confirmed bookings in the timer list until they are completed', function () {
+    $fixtures = BookingFixtures::bookable(durationMinutes: 45);
+    $startedAt = CarbonImmutable::now('UTC')->subDays(2);
+    $booking = Booking::query()->create([
+        'staff_id' => $fixtures['staff']->getKey(),
+        'service_id' => $fixtures['service']->getKey(),
+        'customer_id' => $fixtures['customer']->getKey(),
+        'starts_at' => $startedAt,
+        'ends_at' => $startedAt->addMinutes(45),
+        'status' => BookingStatus::Confirmed,
+    ]);
+
+    $this->actingAs($fixtures['owner'])
+        ->withHeader('X-Tenant', (string) $fixtures['tenant']->getKey())
+        ->getJson('/api/v1/manage/dashboard')
+        ->assertOk()
+        ->assertJsonPath('data.upcoming.0.id', $booking->getKey())
+        ->assertJsonPath('data.upcoming.0.service.duration_min', 45);
+});
+
 it('filters booking dates using the tenant timezone', function () {
     $fixtures = BookingFixtures::bookable();
     TenantFixtures::activate($fixtures['tenant']);

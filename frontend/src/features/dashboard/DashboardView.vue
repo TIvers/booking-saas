@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, DashboardData } from '@/api/types'
@@ -10,6 +10,48 @@ const tenant = useTenantStore()
 const data = ref<DashboardData | null>(null)
 const loading = ref(true)
 const error = ref('')
+const now = ref(Date.now())
+let clockInterval: number | undefined
+
+const timedBookings = computed(() => (data.value?.upcoming ?? []).map((booking) => ({
+  booking,
+  timer: bookingTimer(booking, now.value),
+})))
+
+function formatOverdue(minutes: number): string {
+  if (minutes <= 120) return `${minutes} мин`
+
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  const remainingHours = hours % 24
+
+  if (days > 0) return remainingHours > 0 ? `${days} д ${remainingHours} ч` : `${days} д`
+
+  return `${hours} ч ${minutes % 60} мин`
+}
+
+function bookingTimer(
+  booking: DashboardData['upcoming'][number],
+  currentTime: number,
+): { label: string; state: 'soon' | 'running' | 'overdue' } | null {
+  const startsAt = Date.parse(booking.starts_at)
+  if (!Number.isFinite(startsAt)) return null
+
+  const timeToStart = startsAt - currentTime
+  if (timeToStart > 60 * 60 * 1000) return null
+  if (timeToStart > 0) {
+    return { label: `Через ${Math.ceil(timeToStart / 60_000)} мин`, state: 'soon' }
+  }
+
+  const expectedEnd = startsAt + booking.service.duration_min * 60_000
+  const timeToEnd = expectedEnd - currentTime
+  if (timeToEnd >= 0) {
+    return { label: `До конца ${Math.ceil(timeToEnd / 60_000)} мин`, state: 'running' }
+  }
+
+  const overdueMinutes = Math.ceil(-timeToEnd / 60_000)
+  return { label: `Просрочено ${formatOverdue(overdueMinutes)}`, state: 'overdue' }
+}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -25,7 +67,16 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  clockInterval = window.setInterval(() => {
+    now.value = Date.now()
+  }, 15_000)
+  void load()
+})
+
+onBeforeUnmount(() => {
+  if (clockInterval !== undefined) window.clearInterval(clockInterval)
+})
 </script>
 
 <template>
@@ -81,7 +132,7 @@ onMounted(load)
           <header class="panel__heading">
             <div>
               <p class="eyebrow">БЛИЖАЙШИЕ</p>
-              <h3>Предстоящие записи</h3>
+              <h3>Ближайшие записи</h3>
             </div>
             <RouterLink
               class="text-link"
@@ -91,20 +142,28 @@ onMounted(load)
             </RouterLink>
           </header>
 
-          <div v-if="!data.upcoming.length" class="empty-state">
+          <div v-if="!timedBookings.length" class="empty-state">
             Пока нет предстоящих записей.
           </div>
           <ul v-else class="upcoming-list">
-            <li v-for="booking in data.upcoming" :key="booking.id">
+            <li v-for="item in timedBookings" :key="item.booking.id">
               <span class="upcoming-list__time">
-                {{ formatSlotDateTime(booking.starts_at, booking.staff.location.timezone) }}
+                {{ formatSlotDateTime(item.booking.starts_at, item.booking.staff.location.timezone) }}
               </span>
               <span class="upcoming-list__main">
-                <strong>{{ booking.service.name }}</strong>
-                <small>{{ booking.customer.name }} · {{ booking.staff.display_name }}</small>
+                <strong>{{ item.booking.service.name }}</strong>
+                <small>{{ item.booking.customer.name }} · {{ item.booking.staff.display_name }}</small>
               </span>
-              <span class="status-chip" :class="`status-chip--${booking.status}`">
-                {{ booking.status === 'pending' ? 'Ожидает' : 'Подтверждена' }}
+              <span
+                v-if="item.timer"
+                class="timer-chip"
+                :class="`timer-chip--${item.timer.state}`"
+                role="timer"
+              >
+                {{ item.timer.label }}
+              </span>
+              <span class="status-chip" :class="`status-chip--${item.booking.status}`">
+                {{ item.booking.status === 'pending' ? 'Ожидает' : 'Подтверждена' }}
               </span>
             </li>
           </ul>
@@ -294,6 +353,29 @@ onMounted(load)
 .status-chip--pending {
   background: #fff3dc;
   color: #8b6527;
+}
+
+.timer-chip {
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.32rem 0.55rem;
+  white-space: nowrap;
+}
+
+.timer-chip--soon {
+  background: #eaf3ff;
+  color: #315e9b;
+}
+
+.timer-chip--running {
+  background: #fff3dc;
+  color: #8b6527;
+}
+
+.timer-chip--overdue {
+  background: #fff0ed;
+  color: #a63f34;
 }
 
 .ranking-list > div,

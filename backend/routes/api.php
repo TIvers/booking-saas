@@ -85,6 +85,7 @@ Route::prefix('v1')
             Route::get('/bookings', [BookingController::class, 'index']);
             Route::post('/bookings', [BookingController::class, 'store']);
             Route::get('/bookings/{booking}', [BookingController::class, 'show']);
+            Route::post('/bookings/{booking}/complete', [BookingController::class, 'complete']);
             Route::post('/bookings/{booking}/cancel', [BookingController::class, 'cancel']);
             Route::post('/bookings/{booking}/reschedule', [BookingController::class, 'reschedule']);
             Route::post('/bookings/{booking}/demo-payment', [DemoPaymentController::class, 'store']);

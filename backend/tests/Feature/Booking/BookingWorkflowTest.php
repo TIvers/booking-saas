@@ -89,6 +89,38 @@ it('allows a tenant manager to confirm an unexpired reservation', function () {
         ->assertJsonPath('data.expires_at', null);
 });
 
+it('allows managers to complete a started booking but not a future booking or a customer', function () {
+    $fixtures = BookingFixtures::bookable();
+    $headers = ['X-Tenant' => (string) $fixtures['tenant']->getKey()];
+    $created = $this->actingAs($fixtures['customer'])
+        ->withHeaders($headers)
+        ->postJson('/api/v1/bookings', [
+            'staff_id' => $fixtures['staff']->getKey(),
+            'service_id' => $fixtures['service']->getKey(),
+            'starts_at' => $fixtures['starts_at']->toIso8601String(),
+        ])
+        ->assertCreated();
+    $bookingId = $created->json('data.id');
+
+    $this->actingAs($fixtures['owner'])
+        ->withHeaders($headers)
+        ->postJson("/api/v1/bookings/{$bookingId}/complete")
+        ->assertStatus(409);
+
+    $this->travelTo($fixtures['starts_at']->addMinute());
+
+    $this->actingAs($fixtures['customer'])
+        ->withHeaders($headers)
+        ->postJson("/api/v1/bookings/{$bookingId}/complete")
+        ->assertForbidden();
+
+    $this->actingAs($fixtures['owner'])
+        ->withHeaders($headers)
+        ->postJson("/api/v1/bookings/{$bookingId}/complete")
+        ->assertOk()
+        ->assertJsonPath('data.status', BookingStatus::Completed->value);
+});
+
 it('leaves the original booking unchanged when a reschedule conflicts', function () {
     $fixtures = BookingFixtures::bookable(durationMinutes: 30);
     $headers = ['X-Tenant' => (string) $fixtures['tenant']->getKey()];

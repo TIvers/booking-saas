@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Booking\CancelBookingAction;
+use App\Actions\Booking\CompleteBookingAction;
 use App\Actions\Booking\ConfirmBookingAction;
 use App\Actions\Booking\CreateBookingAction;
 use App\Actions\Booking\RescheduleBookingAction;
@@ -139,9 +140,24 @@ class BookingController
         Request $request,
         Booking $booking,
         ConfirmBookingAction $action,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         $membership = $this->membership($request);
+
+        return response()->json([
+            'data' => $this->withRelations($action->execute($booking), $membership->role),
+        ]);
+    }
+
+    public function complete(
+        Request $request,
+        Booking $booking,
+        CompleteBookingAction $action,
+    ): JsonResponse {
+        $membership = $this->authorizeBooking($request, $booking);
+        abort_unless(
+            $membership->role->canManageTenant() || $membership->role === Role::Staff,
+            403,
+        );
 
         return response()->json([
             'data' => $this->withRelations($action->execute($booking), $membership->role),

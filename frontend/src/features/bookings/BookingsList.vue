@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, getApiProblem } from '@/api/client'
 import type {
@@ -28,6 +28,7 @@ const from = ref('')
 const to = ref('')
 const cancelTarget = ref<BookingRecord | null>(null)
 const cancelReason = ref('')
+const completionTarget = ref<BookingRecord | null>(null)
 const rescheduleTarget = ref<BookingRecord | null>(null)
 const rescheduleReason = ref('')
 const rescheduleDate = ref('')
@@ -37,6 +38,8 @@ const selectedSlot = ref<Slot | null>(null)
 const rescheduleLoading = ref(false)
 const actionLoading = ref(false)
 const actionError = ref('')
+const now = ref(Date.now())
+let clockInterval: number | undefined
 
 const statusOptions = [
   { value: '', label: 'Все статусы' },
@@ -84,6 +87,12 @@ function statusLabel(value: BookingRecord['status']): string {
   return statusOptions.find((option) => option.value === value)?.label ?? value
 }
 
+function canComplete(booking: BookingRecord): boolean {
+  return (auth.canManageTenant || auth.role === 'staff')
+    && booking.status === 'confirmed'
+    && Date.parse(booking.starts_at) <= now.value
+}
+
 async function confirmBooking(booking: BookingRecord): Promise<void> {
   actionLoading.value = true
   actionError.value = ''
@@ -93,6 +102,23 @@ async function confirmBooking(booking: BookingRecord): Promise<void> {
     await load(page.value)
   } catch (requestError) {
     actionError.value = getApiProblem(requestError, 'Не удалось подтвердить запись.').message
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function completeBooking(): Promise<void> {
+  if (!completionTarget.value) return
+
+  actionLoading.value = true
+  actionError.value = ''
+
+  try {
+    await api.post(`/bookings/${completionTarget.value.id}/complete`)
+    completionTarget.value = null
+    await load(page.value)
+  } catch (requestError) {
+    actionError.value = getApiProblem(requestError, 'Не удалось завершить запись.').message
   } finally {
     actionLoading.value = false
   }
@@ -176,8 +202,15 @@ async function saveReschedule(): Promise<void> {
 }
 
 onMounted(() => {
+  clockInterval = window.setInterval(() => {
+    now.value = Date.now()
+  }, 15_000)
   initializePeriod()
   void load()
+})
+
+onBeforeUnmount(() => {
+  if (clockInterval !== undefined) window.clearInterval(clockInterval)
 })
 </script>
 
@@ -211,7 +244,11 @@ onMounted(() => {
       <BaseButton type="submit" :loading="loading">Показать</BaseButton>
     </form>
 
-    <p v-if="actionError && !cancelTarget && !rescheduleTarget" class="message message--error" role="alert">
+    <p
+      v-if="actionError && !cancelTarget && !completionTarget && !rescheduleTarget"
+      class="message message--error"
+      role="alert"
+    >
       {{ actionError }}
     </p>
     <div v-if="loading" class="state-card" role="status">Загружаем записи…</div>
@@ -248,6 +285,14 @@ onMounted(() => {
           {{ formatMoney(booking.service.price_cents, tenant.tenant?.currency ?? 'USD') }}
         </div>
         <div class="booking-card__actions">
+          <BaseButton
+            v-if="canComplete(booking)"
+            variant="secondary"
+            :disabled="actionLoading"
+            @click="completionTarget = booking; actionError = ''"
+          >
+            Завершить
+          </BaseButton>
           <BaseButton
             v-if="auth.canManageTenant && booking.status === 'pending'"
             :loading="actionLoading"
@@ -302,6 +347,22 @@ onMounted(() => {
             Не отменять
           </BaseButton>
           <BaseButton :loading="actionLoading" @click="cancelBooking">Подтвердить отмену</BaseButton>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="completionTarget" class="modal-backdrop" @click.self="completionTarget = null">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="complete-title">
+        <h3 id="complete-title">Завершить запись?</h3>
+        <p>
+          {{ completionTarget.service.name }} · {{ completionTarget.customer.name }}
+        </p>
+        <p v-if="actionError" class="message message--error" role="alert">{{ actionError }}</p>
+        <div class="modal-actions">
+          <BaseButton variant="secondary" :disabled="actionLoading" @click="completionTarget = null">
+            Не сейчас
+          </BaseButton>
+          <BaseButton :loading="actionLoading" @click="completeBooking">Подтвердить завершение</BaseButton>
         </div>
       </section>
     </div>

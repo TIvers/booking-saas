@@ -67,13 +67,23 @@ class DashboardController
         usort($services, static fn (array $left, array $right): int => $right['bookings_count'] <=> $left['bookings_count']);
         usort($staffActivity, static fn (array $left, array $right): int => $right['bookings_count'] <=> $left['bookings_count']);
 
+        $now = CarbonImmutable::now('UTC');
+        $relations = ['service', 'staff.location', 'customer'];
+        $started = Booking::query()
+            ->where('status', BookingStatus::Confirmed->value)
+            ->where('starts_at', '<', $now)
+            ->with($relations)
+            ->orderByDesc('starts_at')
+            ->get();
+
         $upcoming = Booking::query()
             ->active()
-            ->with(['service', 'staff.location', 'customer'])
-            ->where('starts_at', '>=', CarbonImmutable::now('UTC'))
+            ->with($relations)
+            ->where('starts_at', '>=', $now)
             ->orderBy('starts_at')
             ->limit(6)
             ->get();
+        $upcoming = $started->concat($upcoming)->values();
 
         return response()->json([
             'data' => [
