@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\Role;
+use App\Jobs\SendTelegramBroadcast;
 use App\Models\Membership;
+use App\Models\TelegramMarketingSubscription;
 use App\Models\TelegramSubscription;
 use App\Models\TelegramSubscriptionToken;
 use App\Models\Tenant;
@@ -17,6 +19,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -39,6 +42,9 @@ class TelegramController
                     : "https://t.me/{$bot->bot_username}?startapp=service-{service_id}",
                 'mini_app_url' => rtrim((string) config('app.url'), '/')
                     ."/t/{$tenant->slug}?tg_bot=tenant",
+                'company_description' => $bot?->company_description,
+                'contact_url' => $bot?->contact_url,
+                'marketing_subscribers' => TelegramMarketingSubscription::query()->count(),
             ],
         ]);
     }
@@ -73,7 +79,7 @@ class TelegramController
 
         $secret = Str::random(48);
         $webhookUrl = rtrim((string) config('app.url'), '/')
-            ."/api/v1/telegram/webhook/{$tenantId}";
+            ."/api/v1/telegram/python-webhook/{$tenantId}";
 
         try {
             $bot = TenantTelegramBot::query()->updateOrCreate(
@@ -96,10 +102,13 @@ class TelegramController
             ]);
         }
 
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $this->configureBot($bot, $tenant, $telegramApi);
         $telegramApi->call($token, 'setWebhook', [
             'url' => $webhookUrl,
             'secret_token' => $secret,
-            'allowed_updates' => ['message'],
+            'allowed_updates' => ['message', 'callback_query'],
         ]);
         $bot->update(['webhook_ready' => true]);
 
@@ -108,8 +117,66 @@ class TelegramController
                 'connected' => true,
                 'username' => $bot->bot_username,
                 'webhook_ready' => $bot->webhook_ready,
+                'mini_app_url' => rtrim((string) config('app.url'), '/')
+                    ."/t/{$tenant->slug}?tg_bot=tenant",
+                'company_description' => $bot->company_description,
+                'contact_url' => $bot->contact_url,
+                'marketing_subscribers' => TelegramMarketingSubscription::query()->count(),
             ],
         ]);
+    }
+
+    public function updateBotProfile(Request $request, TelegramBotApi $telegramApi): JsonResponse
+    {
+        $this->ensureOwner($request);
+        $data = $request->validate([
+            'company_description' => ['present', 'nullable', 'string', 'max:512'],
+            'contact_url' => ['present', 'nullable', 'url', 'max:2048'],
+        ]);
+        $bot = TenantTelegramBot::query()->where('webhook_ready', true)->firstOrFail();
+        $bot->update($data);
+
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $this->configureBot($bot, $tenant, $telegramApi);
+
+        return response()->json([
+            'data' => [
+                'company_description' => $bot->company_description,
+                'contact_url' => $bot->contact_url,
+            ],
+        ]);
+    }
+
+    public function broadcast(Request $request): JsonResponse
+    {
+        $this->ensureOwner($request);
+        $data = $request->validate([
+            'message' => ['required', 'string', 'max:4096'],
+        ]);
+        abort_unless(
+            TenantTelegramBot::query()->where('webhook_ready', true)->exists(),
+            Response::HTTP_CONFLICT,
+            'Connect a Telegram bot before sending a broadcast.',
+        );
+
+        $tenantId = (int) $request->attributes->get('tenant')->getKey();
+        $queued = 0;
+        TelegramMarketingSubscription::query()
+            ->select(['id', 'chat_id'])
+            ->orderBy('id')
+            ->chunkById(500, function ($subscriptions) use ($tenantId, $data, &$queued): void {
+                foreach ($subscriptions as $subscription) {
+                    SendTelegramBroadcast::dispatch(
+                        $tenantId,
+                        (int) $subscription->chat_id,
+                        $data['message'],
+                    )->delay(now()->addSeconds(intdiv($queued, 20)))->afterCommit();
+                    $queued++;
+                }
+            });
+
+        return response()->json(['data' => ['queued' => $queued]], Response::HTTP_ACCEPTED);
     }
 
     public function disconnectBot(Request $request, TelegramBotApi $telegramApi): Response
@@ -117,11 +184,61 @@ class TelegramController
         $this->ensureOwner($request);
         $bot = TenantTelegramBot::query()->firstOrFail();
         $telegramApi->call($bot->bot_token, 'deleteWebhook', ['drop_pending_updates' => true]);
+        $telegramApi->call($bot->bot_token, 'setChatMenuButton', [
+            'menu_button' => ['type' => 'default'],
+        ]);
+        $telegramApi->call($bot->bot_token, 'setMyCommands', ['commands' => []]);
         $bot->delete();
         TelegramSubscription::query()->delete();
         TelegramSubscriptionToken::query()->delete();
+        TelegramMarketingSubscription::query()->delete();
 
         return response()->noContent();
+    }
+
+    public function workerConfig(Request $request, int $tenant): JsonResponse
+    {
+        $bot = $this->workerBot($request, $tenant);
+        /** @var Tenant $tenantModel */
+        $tenantModel = $request->attributes->get('tenant');
+        $chatId = $request->query('chat_id');
+
+        return response()->json([
+            'data' => [
+                'bot_token' => $bot->bot_token,
+                'bot_username' => $bot->bot_username,
+                'tenant_name' => $tenantModel->name,
+                'company_description' => $bot->company_description,
+                'contact_url' => $bot->contact_url,
+                'mini_app_url' => rtrim((string) config('app.url'), '/')
+                    ."/t/{$tenantModel->slug}?tg_bot=tenant",
+                'api_base' => config('services.telegram.api_base'),
+                'marketing_subscribed' => is_numeric($chatId)
+                    && TelegramMarketingSubscription::query()->where('chat_id', (int) $chatId)->exists(),
+            ],
+        ])->header('Cache-Control', 'no-store, private');
+    }
+
+    public function updateMarketingSubscription(Request $request, int $tenant): JsonResponse
+    {
+        $this->workerBot($request, $tenant);
+        $data = $request->validate([
+            'chat_id' => ['required', 'integer', 'min:1'],
+            'action' => ['required', Rule::in(['subscribe', 'unsubscribe'])],
+        ]);
+
+        if ($data['action'] === 'subscribe') {
+            TelegramMarketingSubscription::query()->updateOrCreate(
+                ['chat_id' => (int) $data['chat_id']],
+                ['subscribed_at' => now()],
+            );
+        } else {
+            TelegramMarketingSubscription::query()
+                ->where('chat_id', (int) $data['chat_id'])
+                ->delete();
+        }
+
+        return response()->json(['data' => ['subscribed' => $data['action'] === 'subscribe']]);
     }
 
     public function subscription(Request $request): JsonResponse
@@ -247,14 +364,10 @@ class TelegramController
             ]);
         } elseif (preg_match('/^\\/stop(?:@\\w+)?$/', $text) === 1) {
             TelegramSubscription::query()->where('chat_id', $chatId)->delete();
+            TelegramMarketingSubscription::query()->where('chat_id', $chatId)->delete();
             $telegramApi->call($bot->bot_token, 'sendMessage', [
                 'chat_id' => $chatId,
-                'text' => 'Уведомления отключены.',
-            ]);
-        } elseif (preg_match('/^\\/start(?:@\\w+)?$/', $text) === 1) {
-            $telegramApi->call($bot->bot_token, 'sendMessage', [
-                'chat_id' => $chatId,
-                'text' => 'Откройте онлайн-запись по ссылке организации, чтобы записаться или подключить уведомления.',
+                'text' => 'Уведомления о записях и новости отключены.',
             ]);
         }
 
@@ -330,5 +443,59 @@ class TelegramController
         return Membership::query()
             ->where('user_id', $request->user()->getAuthIdentifier())
             ->firstOrFail();
+    }
+
+    private function configureBot(
+        TenantTelegramBot $bot,
+        Tenant $tenant,
+        TelegramBotApi $telegramApi,
+    ): void {
+        $description = trim((string) $bot->company_description);
+        if ($description === '') {
+            $description = "Онлайн-запись в {$tenant->name}.";
+        }
+
+        $telegramApi->call($bot->bot_token, 'setMyDescription', [
+            'description' => mb_substr($description, 0, 512),
+        ]);
+        $telegramApi->call($bot->bot_token, 'setMyShortDescription', [
+            'short_description' => mb_substr($description, 0, 120),
+        ]);
+        $telegramApi->call($bot->bot_token, 'setChatMenuButton', [
+            'menu_button' => [
+                'type' => 'web_app',
+                'text' => 'Записаться',
+                'web_app' => [
+                    'url' => rtrim((string) config('app.url'), '/')
+                        ."/t/{$tenant->slug}?tg_bot=tenant",
+                ],
+            ],
+        ]);
+        $telegramApi->call($bot->bot_token, 'setMyCommands', [
+            'commands' => [
+                ['command' => 'start', 'description' => 'Открыть меню и запись'],
+                ['command' => 'about', 'description' => 'Информация об организации'],
+                ['command' => 'stop', 'description' => 'Отключить уведомления'],
+            ],
+        ]);
+    }
+
+    private function workerBot(Request $request, int $tenant): TenantTelegramBot
+    {
+        abort_unless(
+            (int) $request->attributes->get('tenant')->getKey() === $tenant,
+            Response::HTTP_NOT_FOUND,
+        );
+        $bot = TenantTelegramBot::query()->where('webhook_ready', true)->first();
+        $providedSecret = $request->header('X-Telegram-Bot-Api-Secret-Token');
+
+        abort_if(
+            $bot === null
+            || ! is_string($providedSecret)
+            || ! hash_equals($bot->webhook_secret_hash, hash('sha256', $providedSecret)),
+            Response::HTTP_FORBIDDEN,
+        );
+
+        return $bot;
     }
 }

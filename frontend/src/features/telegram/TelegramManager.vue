@@ -10,13 +10,21 @@ interface BotInfo {
   webhook_ready: boolean
   service_link_template: string | null
   mini_app_url: string
+  company_description: string | null
+  contact_url: string | null
+  marketing_subscribers: number
 }
 
 const bot = ref<BotInfo | null>(null)
 const services = ref<Service[]>([])
 const token = ref('')
+const companyDescription = ref('')
+const contactUrl = ref('')
+const broadcastMessage = ref('')
 const loading = ref(true)
 const saving = ref(false)
+const savingProfile = ref(false)
+const sendingBroadcast = ref(false)
 const error = ref('')
 const notice = ref('')
 
@@ -39,6 +47,8 @@ async function load(): Promise<void> {
     ])
     bot.value = botResponse.data.data
     services.value = servicesResponse.data.data
+    companyDescription.value = bot.value.company_description ?? ''
+    contactUrl.value = bot.value.contact_url ?? ''
   } catch (requestError) {
     error.value = getApiProblem(requestError, 'Не удалось загрузить настройки Telegram.').message
   } finally {
@@ -54,12 +64,50 @@ async function connect(): Promise<void> {
   try {
     await api.put('/manage/telegram-bot', { token: token.value.trim() })
     token.value = ''
-    notice.value = 'Бот подключён. Webhook настроен автоматически.'
+    notice.value = 'Бот подключён. Меню, команды и обработчик сообщений настроены автоматически.'
     await load()
   } catch (requestError) {
     error.value = getApiProblem(requestError, 'Не удалось подключить Telegram-бота.').message
   } finally {
     saving.value = false
+  }
+}
+
+async function saveProfile(): Promise<void> {
+  savingProfile.value = true
+  error.value = ''
+  notice.value = ''
+
+  try {
+    await api.put('/manage/telegram-bot/profile', {
+      company_description: companyDescription.value.trim() || null,
+      contact_url: contactUrl.value.trim() || null,
+    })
+    notice.value = 'Информация о компании обновлена в боте.'
+    await load()
+  } catch (requestError) {
+    error.value = getApiProblem(requestError, 'Не удалось сохранить информацию о компании.').message
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+async function sendBroadcast(): Promise<void> {
+  sendingBroadcast.value = true
+  error.value = ''
+  notice.value = ''
+
+  try {
+    const response = await api.post<ApiResponse<{ queued: number }>>(
+      '/manage/telegram-broadcasts',
+      { message: broadcastMessage.value.trim() },
+    )
+    notice.value = `В очередь поставлено сообщений: ${response.data.data.queued}.`
+    broadcastMessage.value = ''
+  } catch (requestError) {
+    error.value = getApiProblem(requestError, 'Не удалось поставить рассылку в очередь.').message
+  } finally {
+    sendingBroadcast.value = false
   }
 }
 
@@ -116,7 +164,7 @@ onMounted(() => {
         </label>
         <p class="hint">
           Токен хранится зашифрованным и не показывается после сохранения. При подключении
-          webhook настраивается автоматически. Чтобы заменить бота, сначала отключите текущего.
+          webhook, меню и команды настраиваются автоматически. Чтобы заменить бота, сначала отключите текущего.
         </p>
         <div class="actions">
           <BaseButton type="submit" :loading="saving">Подключить бота</BaseButton>
@@ -132,13 +180,35 @@ onMounted(() => {
         </div>
       </form>
 
+      <form v-if="bot?.connected" class="panel profile-form" @submit.prevent="saveProfile">
+        <h3>Информация о компании</h3>
+        <label class="field">
+          <span>Описание для команды /about и профиля бота</span>
+          <textarea
+            v-model="companyDescription"
+            maxlength="512"
+            rows="4"
+            placeholder="Коротко расскажите о компании и услугах"
+          />
+        </label>
+        <label class="field">
+          <span>Сайт или ссылка для связи</span>
+          <input
+            v-model="contactUrl"
+            type="url"
+            maxlength="2048"
+            placeholder="https://example.com"
+          />
+        </label>
+        <p class="hint">
+          Кнопка меню Mini App, описание бота и команды устанавливаются автоматически.
+          Для прямых ссылок startapp настройте Main Mini App в @BotFather.
+        </p>
+        <BaseButton type="submit" :loading="savingProfile">Сохранить информацию</BaseButton>
+      </form>
+
       <section v-if="bot?.connected" class="panel instructions">
-        <h3>Настройка WebApp в @BotFather</h3>
-        <ol>
-          <li>Откройте настройки подключённого бота в @BotFather.</li>
-          <li>Задайте домен приложения и включите Main Mini App для WebApp по адресу ниже.</li>
-          <li>Используйте ссылки на услуги ниже: они откроют запись с выбранной услугой.</li>
-        </ol>
+        <h3>Mini App и услуги</h3>
         <p><strong>URL Mini App:</strong> <a :href="bot.mini_app_url">{{ bot.mini_app_url }}</a></p>
         <p>При запуске бота через ссылку сервиса клиент также сможет подключить уведомления.</p>
         <h3>Ссылки на услуги</h3>
@@ -150,6 +220,32 @@ onMounted(() => {
         </ul>
         <p v-else class="hint">Добавьте активные услуги, чтобы получить ссылки.</p>
       </section>
+
+      <form v-if="bot?.connected" class="panel broadcast-form" @submit.prevent="sendBroadcast">
+        <h3>Рассылка новостей</h3>
+        <p class="hint">
+          Подписчиков: {{ bot.marketing_subscribers }}. Сообщение получат только клиенты,
+          которые отдельно нажали «Подписаться на новости» в боте. Подписка на напоминания
+          о записях для рассылки не используется.
+        </p>
+        <label class="field">
+          <span>Текст сообщения</span>
+          <textarea
+            v-model="broadcastMessage"
+            maxlength="4096"
+            rows="5"
+            required
+            placeholder="Текст новости для подписчиков"
+          />
+        </label>
+        <BaseButton
+          type="submit"
+          :loading="sendingBroadcast"
+          :disabled="bot.marketing_subscribers === 0"
+        >
+          Поставить рассылку в очередь
+        </BaseButton>
+      </form>
     </template>
   </section>
 </template>
@@ -193,6 +289,12 @@ header > p:last-child,
   gap: 0.8rem;
 }
 
+.profile-form,
+.broadcast-form {
+  display: grid;
+  gap: 0.8rem;
+}
+
 .connection-status {
   color: #31574e;
 }
@@ -223,6 +325,14 @@ header > p:last-child,
   padding: 0.6rem 0.75rem;
 }
 
+.field textarea {
+  border: 1px solid #d5dfd8;
+  border-radius: 0.65rem;
+  font: inherit;
+  padding: 0.65rem 0.75rem;
+  resize: vertical;
+}
+
 .hint {
   margin: 0;
 }
@@ -233,7 +343,9 @@ header > p:last-child,
   gap: 0.6rem;
 }
 
-.instructions h3 {
+.instructions h3,
+.profile-form h3,
+.broadcast-form h3 {
   color: #31574e;
   font-size: 1rem;
   margin: 0.3rem 0 0.6rem;

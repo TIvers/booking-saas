@@ -9,8 +9,8 @@ use App\Http\Controllers\Api\V1\ScheduleController;
 use App\Http\Controllers\Api\V1\ServiceController;
 use App\Http\Controllers\Api\V1\SlotController;
 use App\Http\Controllers\Api\V1\StaffController;
-use App\Http\Controllers\Api\V1\TenantOnboardingController;
 use App\Http\Controllers\Api\V1\TelegramController;
+use App\Http\Controllers\Api\V1\TenantOnboardingController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
@@ -37,6 +37,10 @@ Route::prefix('v1')
         Route::get('/staff', [StaffController::class, 'index']);
         Route::get('/staff/{staff}', [StaffController::class, 'show']);
         Route::get('/slots', [SlotController::class, 'index']);
+        Route::get('/telegram/worker/config/{tenant}', [TelegramController::class, 'workerConfig'])
+            ->whereNumber('tenant');
+        Route::post('/telegram/worker/marketing/{tenant}', [TelegramController::class, 'updateMarketingSubscription'])
+            ->whereNumber('tenant');
         Route::post('/telegram/webhook/{tenant}', [TelegramController::class, 'webhook'])
             ->whereNumber('tenant');
 
@@ -68,7 +72,9 @@ Route::prefix('v1')
             Route::post('/bookings/{booking}/confirm', [BookingController::class, 'confirm']);
             Route::get('/manage/telegram-bot', [TelegramController::class, 'bot']);
             Route::put('/manage/telegram-bot', [TelegramController::class, 'connectBot']);
+            Route::put('/manage/telegram-bot/profile', [TelegramController::class, 'updateBotProfile']);
             Route::delete('/manage/telegram-bot', [TelegramController::class, 'disconnectBot']);
+            Route::post('/manage/telegram-broadcasts', [TelegramController::class, 'broadcast']);
         });
 
         Route::middleware(['auth:sanctum', 'tenant.member'])->group(function (): void {
