@@ -20,7 +20,14 @@ class LocationScheduleController
     {
         $workSchedules = $location->workSchedules()
             ->orderBy('weekday')
-            ->get(['weekday', 'is_closed', 'start_time', 'end_time'])
+            ->get([
+                'weekday',
+                'is_closed',
+                'start_time',
+                'end_time',
+                'lunch_start_time',
+                'lunch_end_time',
+            ])
             ->toArray();
 
         if ($workSchedules === []) {
@@ -59,12 +66,16 @@ class LocationScheduleController
             'work_schedules.*.is_closed' => ['required', 'boolean'],
             'work_schedules.*.start_time' => ['nullable', 'date_format:H:i'],
             'work_schedules.*.end_time' => ['nullable', 'date_format:H:i'],
+            'work_schedules.*.lunch_start_time' => ['nullable', 'date_format:H:i'],
+            'work_schedules.*.lunch_end_time' => ['nullable', 'date_format:H:i'],
         ]);
 
         foreach ($data['work_schedules'] as $index => $schedule) {
             if ($schedule['is_closed']) {
                 $data['work_schedules'][$index]['start_time'] = null;
                 $data['work_schedules'][$index]['end_time'] = null;
+                $data['work_schedules'][$index]['lunch_start_time'] = null;
+                $data['work_schedules'][$index]['lunch_end_time'] = null;
 
                 continue;
             }
@@ -76,6 +87,32 @@ class LocationScheduleController
                 throw ValidationException::withMessages([
                     "work_schedules.{$index}.end_time" => [
                         'An open day requires an end time later than its start time.',
+                    ],
+                ]);
+            }
+
+            $lunchStart = $schedule['lunch_start_time'] ?? null;
+            $lunchEnd = $schedule['lunch_end_time'] ?? null;
+
+            if (($lunchStart === null) !== ($lunchEnd === null)) {
+                throw ValidationException::withMessages([
+                    "work_schedules.{$index}.lunch_end_time" => [
+                        'Lunch requires both a start and an end time.',
+                    ],
+                ]);
+            }
+
+            if (
+                $lunchStart !== null
+                && (
+                    $lunchEnd <= $lunchStart
+                    || $lunchStart < $schedule['start_time']
+                    || $lunchEnd > $schedule['end_time']
+                )
+            ) {
+                throw ValidationException::withMessages([
+                    "work_schedules.{$index}.lunch_end_time" => [
+                        'Lunch must be within working hours and end later than it starts.',
                     ],
                 ]);
             }

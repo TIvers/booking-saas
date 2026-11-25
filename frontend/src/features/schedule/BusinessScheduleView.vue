@@ -16,6 +16,8 @@ interface BusinessScheduleDay {
   is_closed: boolean
   start_time: string | null
   end_time: string | null
+  lunch_start_time: string | null
+  lunch_end_time: string | null
 }
 
 interface ScheduleClosure {
@@ -77,6 +79,64 @@ function normalizeTime(time: string | null): string | null {
   return time ? time.slice(0, 5) : null
 }
 
+function timeToMinutes(time: string | null): number | null {
+  if (!time) return null
+
+  const [hours, minutes] = time.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function minutesToTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60).toString().padStart(2, '0')
+  const remainder = (minutes % 60).toString().padStart(2, '0')
+  return `${hours}:${remainder}`
+}
+
+function hasLunch(day: BusinessScheduleDay): boolean {
+  return day.lunch_start_time !== null && day.lunch_end_time !== null
+}
+
+function canSetLunch(day: BusinessScheduleDay): boolean {
+  const start = timeToMinutes(day.start_time)
+  const end = timeToMinutes(day.end_time)
+  return start !== null && end !== null && end - start >= 15
+}
+
+function setDayOpen(day: BusinessScheduleDay, event: Event): void {
+  const isOpen = (event.currentTarget as HTMLInputElement).checked
+  day.is_closed = !isOpen
+
+  if (isOpen) {
+    day.start_time ??= '10:00'
+    day.end_time ??= '18:00'
+    return
+  }
+
+  day.start_time = null
+  day.end_time = null
+  day.lunch_start_time = null
+  day.lunch_end_time = null
+}
+
+function setLunch(day: BusinessScheduleDay, event: Event): void {
+  const hasLunchBreak = (event.currentTarget as HTMLInputElement).checked
+
+  if (!hasLunchBreak) {
+    day.lunch_start_time = null
+    day.lunch_end_time = null
+    return
+  }
+
+  const start = timeToMinutes(day.start_time)
+  const end = timeToMinutes(day.end_time)
+  if (start === null || end === null || end - start < 15) return
+
+  const duration = Math.min(60, Math.floor((end - start) / 15) * 15)
+  const lunchStart = Math.floor(start + (end - start - duration) / 2)
+  day.lunch_start_time = minutesToTime(lunchStart)
+  day.lunch_end_time = minutesToTime(lunchStart + duration)
+}
+
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat('ru-RU', {
     timeZone: 'UTC',
@@ -119,6 +179,8 @@ async function loadSchedule(): Promise<void> {
       ...day,
       start_time: normalizeTime(day.start_time),
       end_time: normalizeTime(day.end_time),
+      lunch_start_time: normalizeTime(day.lunch_start_time),
+      lunch_end_time: normalizeTime(day.lunch_end_time),
     }))
     closures.value = response.data.data.closures
   } catch (requestError) {
@@ -144,6 +206,8 @@ async function saveSchedule(): Promise<void> {
           is_closed: day.is_closed,
           start_time: day.is_closed ? null : day.start_time,
           end_time: day.is_closed ? null : day.end_time,
+          lunch_start_time: day.is_closed ? null : day.lunch_start_time,
+          lunch_end_time: day.is_closed ? null : day.lunch_end_time,
         })),
       },
     )
@@ -151,6 +215,8 @@ async function saveSchedule(): Promise<void> {
       ...day,
       start_time: normalizeTime(day.start_time),
       end_time: normalizeTime(day.end_time),
+      lunch_start_time: normalizeTime(day.lunch_start_time),
+      lunch_end_time: normalizeTime(day.lunch_end_time),
     }))
     notice.value = 'График филиала сохранён.'
   } catch (requestError) {
@@ -252,32 +318,61 @@ onMounted(loadLocations)
         <div class="schedule-table">
           <div class="schedule-table__head">
             <span>День недели</span>
-            <span>Работает</span>
+            <span>Режим работы</span>
             <span>Открытие</span>
             <span>Закрытие</span>
+            <span>Обед</span>
           </div>
           <div v-for="day in workSchedules" :key="day.weekday" class="schedule-row">
             <strong>{{ weekdays.find((item) => item.value === day.weekday)?.label }}</strong>
             <label class="open-toggle">
-              <input v-model="day.is_closed" type="checkbox" />
-              <span>{{ day.is_closed ? 'Выходной' : 'Открыт' }}</span>
+              <input :checked="!day.is_closed" type="checkbox" @change="setDayOpen(day, $event)" />
+              <span>Открыт</span>
             </label>
-            <input
-              v-if="!day.is_closed"
-              v-model="day.start_time"
-              class="time-input"
-              type="time"
-              required
-            />
-            <span v-else class="closed-placeholder">—</span>
-            <input
-              v-if="!day.is_closed"
-              v-model="day.end_time"
-              class="time-input"
-              type="time"
-              required
-            />
-            <span v-else class="closed-placeholder">—</span>
+            <template v-if="!day.is_closed">
+              <input
+                v-model="day.start_time"
+                class="time-input"
+                type="time"
+                :aria-label="`Открытие, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                required
+              />
+              <input
+                v-model="day.end_time"
+                class="time-input"
+                type="time"
+                :aria-label="`Закрытие, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                required
+              />
+              <div class="lunch-cell">
+                <label class="open-toggle">
+                  <input
+                    :checked="hasLunch(day)"
+                    :disabled="!canSetLunch(day)"
+                    type="checkbox"
+                    @change="setLunch(day, $event)"
+                  />
+                  <span>Обед</span>
+                </label>
+                <div v-if="hasLunch(day)" class="lunch-times">
+                  <input
+                    v-model="day.lunch_start_time"
+                    class="time-input"
+                    type="time"
+                    :aria-label="`Начало обеда, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                    required
+                  />
+                  <input
+                    v-model="day.lunch_end_time"
+                    class="time-input"
+                    type="time"
+                    :aria-label="`Конец обеда, ${weekdays.find((item) => item.value === day.weekday)?.label}`"
+                    required
+                  />
+                </div>
+              </div>
+            </template>
+            <span v-else class="closed-placeholder">Выходной</span>
           </div>
         </div>
       </section>
@@ -419,7 +514,7 @@ onMounted(loadLocations)
   align-items: center;
   display: grid;
   gap: 0.65rem;
-  grid-template-columns: minmax(8rem, 1.2fr) minmax(7rem, 1fr) repeat(2, minmax(7rem, 0.8fr));
+  grid-template-columns: minmax(8rem, 1.2fr) minmax(7rem, 0.8fr) repeat(2, minmax(6rem, 0.8fr)) minmax(12rem, 1.4fr);
 }
 
 .schedule-table__head {
@@ -459,7 +554,24 @@ onMounted(loadLocations)
 
 .closed-placeholder {
   color: #9aa49c;
+  grid-column: 3 / -1;
   padding-left: 0.65rem;
+}
+
+.lunch-cell,
+.lunch-times {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.lunch-times {
+  flex: 1 1 100%;
+}
+
+.lunch-times .time-input {
+  flex: 1 1 5rem;
 }
 
 .closure-form {
@@ -538,6 +650,11 @@ onMounted(loadLocations)
   }
 
   .schedule-row strong {
+    grid-column: 1 / -1;
+  }
+
+  .closed-placeholder,
+  .lunch-cell {
     grid-column: 1 / -1;
   }
 }

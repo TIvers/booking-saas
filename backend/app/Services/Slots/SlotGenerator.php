@@ -61,8 +61,8 @@ final class SlotGenerator
         $weekday = $localStart->dayOfWeekIso; // 1 (пн) ... 7 (вс)
 
         $workRanges = $this->resolveWorkRanges($staff, $day, $weekday);
-        $locationRanges = $this->resolveLocationWorkRanges($staff, $day, $weekday);
-        $workRanges = $this->intersectRanges($workRanges, $locationRanges);
+        $locationSchedule = $this->resolveLocationSchedule($staff, $day, $weekday);
+        $workRanges = $this->intersectRanges($workRanges, $locationSchedule['work_ranges']);
 
         if ($workRanges === []) {
             return [];
@@ -74,6 +74,7 @@ final class SlotGenerator
             ->get(['start_time', 'end_time'])
             ->map(fn (ScheduleBreak $b): array => [(string) $b->start_time, (string) $b->end_time])
             ->all();
+        array_push($breakRanges, ...$locationSchedule['break_ranges']);
 
         $busy = Booking::query()
             ->active()
@@ -193,9 +194,12 @@ final class SlotGenerator
     }
 
     /**
-     * @return list<array{0: string, 1: string}>
+     * @return array{
+     *     work_ranges: list<array{0: string, 1: string}>,
+     *     break_ranges: list<array{0: string, 1: string}>
+     * }
      */
-    private function resolveLocationWorkRanges(Staff $staff, string $day, int $weekday): array
+    private function resolveLocationSchedule(Staff $staff, string $day, int $weekday): array
     {
         if (
             LocationScheduleClosure::query()
@@ -203,7 +207,7 @@ final class SlotGenerator
                 ->whereDate('date', $day)
                 ->exists()
         ) {
-            return [];
+            return ['work_ranges' => [], 'break_ranges' => []];
         }
 
         $schedule = LocationWorkSchedule::query()
@@ -212,14 +216,25 @@ final class SlotGenerator
             ->first();
 
         if ($schedule === null) {
-            return $weekday <= 5 ? [['10:00', '18:00']] : [];
+            return [
+                'work_ranges' => $weekday <= 5 ? [['10:00', '18:00']] : [],
+                'break_ranges' => [],
+            ];
         }
 
         if ($schedule->is_closed || $schedule->start_time === null || $schedule->end_time === null) {
-            return [];
+            return ['work_ranges' => [], 'break_ranges' => []];
         }
 
-        return [[(string) $schedule->start_time, (string) $schedule->end_time]];
+        $breakRanges = [];
+        if ($schedule->lunch_start_time !== null && $schedule->lunch_end_time !== null) {
+            $breakRanges[] = [(string) $schedule->lunch_start_time, (string) $schedule->lunch_end_time];
+        }
+
+        return [
+            'work_ranges' => [[(string) $schedule->start_time, (string) $schedule->end_time]],
+            'break_ranges' => $breakRanges,
+        ];
     }
 
     /**

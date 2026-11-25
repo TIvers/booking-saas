@@ -18,6 +18,8 @@ class LocationWorkSchedule extends Model
         'is_closed',
         'start_time',
         'end_time',
+        'lunch_start_time',
+        'lunch_end_time',
     ];
 
     protected function casts(): array
@@ -29,7 +31,14 @@ class LocationWorkSchedule extends Model
     }
 
     /**
-     * @return list<array{weekday: int, is_closed: bool, start_time: ?string, end_time: ?string}>
+     * @return list<array{
+     *     weekday: int,
+     *     is_closed: bool,
+     *     start_time: ?string,
+     *     end_time: ?string,
+     *     lunch_start_time: ?string,
+     *     lunch_end_time: ?string
+     * }>
      */
     public static function defaultWeek(): array
     {
@@ -39,6 +48,8 @@ class LocationWorkSchedule extends Model
                 'is_closed' => $weekday > 5,
                 'start_time' => $weekday <= 5 ? '10:00' : null,
                 'end_time' => $weekday <= 5 ? '18:00' : null,
+                'lunch_start_time' => null,
+                'lunch_end_time' => null,
             ],
             range(1, 7),
         );

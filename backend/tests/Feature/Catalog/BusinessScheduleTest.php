@@ -47,6 +47,8 @@ it('limits employee slots to location hours and blocks location closure dates', 
                 'is_closed' => false,
                 'start_time' => '12:00',
                 'end_time' => '16:00',
+                'lunch_start_time' => '13:00',
+                'lunch_end_time' => '14:00',
             ];
         }
 
@@ -66,7 +68,8 @@ it('limits employee slots to location hours and blocks location closure dates', 
 
     $this->getJson($slotsUrl, $headers)
         ->assertOk()
-        ->assertJsonPath('data.0.starts_at', $fixtures['starts_at']->addHours(2)->toIso8601String());
+        ->assertJsonPath('data.0.starts_at', $fixtures['starts_at']->addHours(2)->toIso8601String())
+        ->assertJsonPath('data.3.starts_at', $fixtures['starts_at']->addHours(4)->toIso8601String());
 
     $this->actingAs($fixtures['owner'])
         ->withHeaders($headers)
@@ -100,6 +103,16 @@ it('rejects invalid business hours and blank closure reasons', function () {
         ->putJson($scheduleUrl, ['work_schedules' => $schedule])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('work_schedules.0.end_time');
+
+    $schedule = LocationWorkSchedule::defaultWeek();
+    $schedule[0]['lunch_start_time'] = '09:00';
+    $schedule[0]['lunch_end_time'] = '10:00';
+
+    $this->actingAs($owner)
+        ->withHeaders($headers)
+        ->putJson($scheduleUrl, ['work_schedules' => $schedule])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('work_schedules.0.lunch_end_time');
 
     $this->actingAs($owner)
         ->withHeaders($headers)
