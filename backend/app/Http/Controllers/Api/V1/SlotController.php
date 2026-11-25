@@ -46,9 +46,14 @@ class SlotController
         }
 
         $date = CarbonImmutable::parse($data['date'], $staff->location->timezone);
+        $tenant = $request->attributes->get('tenant');
         $generator = new SlotGenerator(
             stepMinutes: (int) config('booking.slot_step_minutes'),
-            minLeadMinutes: (int) config('booking.min_lead_minutes'),
+            minLeadMinutes: (int) (
+                $service->booking_lead_time_minutes
+                ?? $tenant->booking_lead_time_minutes
+                ?? config('booking.min_lead_minutes')
+            ),
         );
 
         return response()->json([

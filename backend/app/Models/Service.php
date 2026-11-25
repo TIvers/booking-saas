@@ -21,6 +21,7 @@ class Service extends Model
         'price_cents',
         'deposit_cents',
         'is_active',
+        'booking_lead_time_minutes',
     ];
 
     protected function casts(): array
@@ -31,6 +32,7 @@ class Service extends Model
             'price_cents' => 'integer',
             'deposit_cents' => 'integer',
             'is_active' => 'boolean',
+            'booking_lead_time_minutes' => 'integer',
         ];
     }
 

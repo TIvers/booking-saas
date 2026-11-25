@@ -107,9 +107,14 @@ class CreateBookingAction
         CarbonImmutable $startsAt,
         CarbonImmutable $now,
     ): ?Slot {
+        $tenant = app('currentTenant');
         $generator = new SlotGenerator(
             stepMinutes: (int) config('booking.slot_step_minutes'),
-            minLeadMinutes: (int) config('booking.min_lead_minutes'),
+            minLeadMinutes: (int) (
+                $service->booking_lead_time_minutes
+                ?? $tenant->booking_lead_time_minutes
+                ?? config('booking.min_lead_minutes')
+            ),
         );
 
         foreach ($generator->forDay($staff, $service, $localDate, $now) as $slot) {

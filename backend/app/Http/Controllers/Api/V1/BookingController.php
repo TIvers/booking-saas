@@ -207,6 +207,7 @@ class BookingController
             CarbonImmutable::parse($data['starts_at'])->utc(),
             (int) $request->user()->getAuthIdentifier(),
             $data['reason'] ?? null,
+            $membership->role,
         );
 
         return response()->json(['data' => $this->withRelations($booking, $membership->role)]);

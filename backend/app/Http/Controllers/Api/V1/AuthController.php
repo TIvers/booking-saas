@@ -37,6 +37,8 @@ class AuthController
                 'timezone' => $tenant->timezone,
                 'currency' => $tenant->currency,
                 'demo_payments_enabled' => (bool) config('payments.demo_enabled'),
+                'allow_customer_rescheduling' => $tenant->allow_customer_rescheduling,
+                'max_customer_reschedules' => $tenant->max_customer_reschedules,
             ],
         ]);
     }

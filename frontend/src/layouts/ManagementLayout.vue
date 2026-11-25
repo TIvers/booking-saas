@@ -27,6 +27,12 @@ const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_ena
       <RouterLink :to="{ name: 'manage-staff', params: { tenantSlug: tenantStore.slug ?? '' } }">Команда</RouterLink>
       <RouterLink
         v-if="auth.role === 'owner'"
+        :to="{ name: 'manage-booking-settings', params: { tenantSlug: tenantStore.slug ?? '' } }"
+      >
+        Правила записи
+      </RouterLink>
+      <RouterLink
+        v-if="auth.role === 'owner'"
         :to="{ name: 'manage-telegram', params: { tenantSlug: tenantStore.slug ?? '' } }"
       >
         Telegram

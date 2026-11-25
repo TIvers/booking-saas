@@ -5,6 +5,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, BookingRecord, PaginatedMeta, Slot } from '@/api/types'
 import { dateInTimezone, formatMoney, formatSlotDateTime, formatSlotTime } from '@/composables/useTimezone'
+import { getRescheduleChanges, rescheduleHistoryTooltip } from '@/composables/rescheduleHistory'
 import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 
@@ -81,13 +82,21 @@ function statusLabel(value: BookingRecord['status']): string {
   return statusOptions.find((option) => option.value === value)?.label ?? value
 }
 
-function canChange(booking: BookingRecord): boolean {
+function canCancel(booking: BookingRecord): boolean {
   if (booking.status !== 'pending' && booking.status !== 'confirmed') return false
   if (new Date(booking.starts_at).getTime() <= Date.now()) return false
 
   return booking.status !== 'pending'
     || booking.expires_at === null
     || new Date(booking.expires_at).getTime() > Date.now()
+}
+
+function canReschedule(booking: BookingRecord): boolean {
+  if (!canCancel(booking) || !tenant.tenant?.allow_customer_rescheduling) return false
+
+  const maximum = tenant.tenant.max_customer_reschedules
+  const rescheduleCount = getRescheduleChanges(booking).length
+  return maximum === null || rescheduleCount < maximum
 }
 
 function openReschedule(booking: BookingRecord): void {
@@ -356,22 +365,38 @@ onBeforeUnmount(() => {
           <span class="status-chip" :class="`status-chip--${booking.status}`">
             {{ statusLabel(booking.status) }}
           </span>
+          <span
+            v-if="getRescheduleChanges(booking).length"
+            class="status-chip status-chip--rescheduled"
+            :title="rescheduleHistoryTooltip(booking)"
+            tabindex="0"
+          >
+            Перенесена<span v-if="getRescheduleChanges(booking).length > 1"> ×{{ getRescheduleChanges(booking).length }}</span>
+          </span>
         </div>
         <div class="booking-card__details">
           <strong>{{ booking.service.name }}</strong>
           <span>{{ booking.staff.display_name }} · {{ booking.staff.location.name }}</span>
         </div>
-        <div v-if="booking.changes?.some((change) => change.reason)" class="booking-comments">
-          <p v-for="change in booking.changes" v-show="change.reason" :key="change.id">
-            <strong>{{ change.action === 'cancelled' ? 'Причина отмены' : 'Причина переноса' }}:</strong>
+        <div
+          v-if="booking.changes?.some((change) => change.action === 'cancelled' && change.reason)"
+          class="booking-comments"
+        >
+          <p
+            v-for="change in booking.changes"
+            v-show="change.action === 'cancelled' && change.reason"
+            :key="change.id"
+          >
+            <strong>Причина отмены:</strong>
             {{ change.reason }}
           </p>
         </div>
         <div class="booking-card__price">
           {{ formatMoney(booking.service.price_cents, tenant.tenant?.currency ?? 'USD') }}
         </div>
-        <div v-if="canChange(booking)" class="booking-card__actions">
+        <div v-if="canReschedule(booking) || canCancel(booking)" class="booking-card__actions">
           <BaseButton
+            v-if="canReschedule(booking)"
             variant="secondary"
             :disabled="actionLoading"
             @click="openReschedule(booking)"
@@ -379,6 +404,7 @@ onBeforeUnmount(() => {
             Перенести
           </BaseButton>
           <BaseButton
+            v-if="canCancel(booking)"
             variant="ghost"
             :disabled="actionLoading"
             @click="cancelTarget = booking; cancelReason = ''; actionError = ''"

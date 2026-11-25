@@ -80,6 +80,7 @@ class ServiceController
             'price_cents' => [$required, 'integer', 'between:0,'.self::MAX_CENTS],
             'deposit_cents' => ['sometimes', 'integer', 'between:0,'.self::MAX_CENTS],
             'is_active' => ['sometimes', 'boolean'],
+            'booking_lead_time_minutes' => ['sometimes', 'nullable', 'integer', 'between:0,2147483647'],
         ];
     }
 

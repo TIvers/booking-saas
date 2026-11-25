@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BookingController;
+use App\Http\Controllers\Api\V1\BookingSettingsController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DemoPaymentController;
 use App\Http\Controllers\Api\V1\LocationController;
@@ -51,6 +52,8 @@ Route::prefix('v1')
 
         Route::middleware(['auth:sanctum', 'tenant.member', 'tenant.manager'])->group(function (): void {
             Route::get('/manage/dashboard', DashboardController::class);
+            Route::get('/manage/booking-settings', [BookingSettingsController::class, 'show']);
+            Route::put('/manage/booking-settings', [BookingSettingsController::class, 'update']);
             Route::get('/manage/services', [ServiceController::class, 'manageIndex']);
             Route::get('/manage/staff', [StaffController::class, 'manageIndex']);
 

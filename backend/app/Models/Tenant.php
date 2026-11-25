@@ -15,12 +15,18 @@ class Tenant extends Model
         'timezone',
         'currency',
         'settings',
+        'allow_customer_rescheduling',
+        'max_customer_reschedules',
+        'booking_lead_time_minutes',
     ];
 
     protected function casts(): array
     {
         return [
             'settings' => 'array',
+            'allow_customer_rescheduling' => 'boolean',
+            'max_customer_reschedules' => 'integer',
+            'booking_lead_time_minutes' => 'integer',
         ];
     }
 

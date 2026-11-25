@@ -10,6 +10,8 @@ export interface Tenant {
   timezone: string
   currency: string
   demo_payments_enabled: boolean
+  allow_customer_rescheduling: boolean
+  max_customer_reschedules: number | null
 }
 
 export const useTenantStore = defineStore('tenant', () => {

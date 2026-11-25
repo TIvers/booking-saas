@@ -7,7 +7,7 @@ return [
     'slot_step_minutes' => (int) env('BOOKING_SLOT_STEP_MINUTES', 15),
 
     // Минимальный срок до начала записи: ближе чем через столько минут записаться нельзя.
-    'min_lead_minutes' => (int) env('BOOKING_MIN_LEAD_MINUTES', 120),
+    'min_lead_minutes' => (int) env('BOOKING_MIN_LEAD_MINUTES', 180),
 
     // На сколько минут резервируется слот, пока клиент оплачивает депозит.
     'reservation_ttl_minutes' => (int) env('BOOKING_RESERVATION_TTL_MINUTES', 10),

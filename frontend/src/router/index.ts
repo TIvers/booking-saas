@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 import BookingWizard from '@/features/booking/BookingWizard.vue'
+import BookingSettingsView from '@/features/settings/BookingSettingsView.vue'
 import BookingsCalendar from '@/features/bookings/BookingsCalendar.vue'
 import BookingsList from '@/features/bookings/BookingsList.vue'
 import MyBookingsView from '@/features/bookings/MyBookingsView.vue'
@@ -80,6 +81,12 @@ export const router = createRouter({
           path: 'staff',
           name: 'manage-staff',
           component: StaffManager,
+        },
+        {
+          path: 'booking-settings',
+          name: 'manage-booking-settings',
+          component: BookingSettingsView,
+          meta: { requiresOwner: true },
         },
         {
           path: 'telegram',

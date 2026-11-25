@@ -2,7 +2,14 @@
 import { onMounted, reactive, ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, getApiProblem } from '@/api/client'
-import type { ApiResponse, Service } from '@/api/types'
+import type { ApiResponse, BookingSettings, Service } from '@/api/types'
+import {
+  bookingLeadTimeParts,
+  bookingLeadTimeUnits,
+  formatBookingLeadTime,
+  toBookingLeadTimeMinutes,
+  type BookingLeadTimeUnit,
+} from '@/composables/bookingLeadTime'
 import { formatMoney } from '@/composables/useTimezone'
 import { useTenantStore } from '@/stores/tenant'
 
@@ -13,10 +20,14 @@ interface ServiceDraft {
   buffer: string
   price: string
   deposit: string
+  customLeadTime: boolean
+  leadTimeValue: string
+  leadTimeUnit: BookingLeadTimeUnit
 }
 
 const tenant = useTenantStore()
 const services = ref<Service[]>([])
+const defaultBookingLeadTime = ref(180)
 const editingId = ref<number | null>(null)
 const loading = ref(false)
 const saving = ref(false)
@@ -25,6 +36,8 @@ const notice = ref('')
 const draft = reactive<ServiceDraft>(emptyDraft())
 
 function emptyDraft(): ServiceDraft {
+  const leadTime = bookingLeadTimeParts(defaultBookingLeadTime.value)
+
   return {
     name: '',
     description: '',
@@ -32,6 +45,9 @@ function emptyDraft(): ServiceDraft {
     buffer: '0',
     price: '',
     deposit: '0',
+    customLeadTime: false,
+    leadTimeValue: String(leadTime.value),
+    leadTimeUnit: leadTime.unit,
   }
 }
 
@@ -40,8 +56,15 @@ async function load(): Promise<void> {
   error.value = ''
 
   try {
-    const response = await api.get<ApiResponse<Service[]>>('/manage/services')
-    services.value = response.data.data
+    const [servicesResponse, settingsResponse] = await Promise.all([
+      api.get<ApiResponse<Service[]>>('/manage/services'),
+      api.get<ApiResponse<BookingSettings>>('/manage/booking-settings'),
+    ])
+    services.value = servicesResponse.data.data
+    defaultBookingLeadTime.value = settingsResponse.data.data.booking_lead_time_minutes
+    if (editingId.value === null && !draft.customLeadTime) {
+      Object.assign(draft, emptyDraft())
+    }
   } catch (requestError) {
     error.value = getApiProblem(requestError, 'Не удалось загрузить услуги.').message
   } finally {
@@ -57,6 +80,9 @@ function resetForm(): void {
 
 function edit(service: Service): void {
   editingId.value = service.id
+  const leadTime = bookingLeadTimeParts(
+    service.booking_lead_time_minutes ?? defaultBookingLeadTime.value,
+  )
   Object.assign(draft, {
     name: service.name,
     description: service.description ?? '',
@@ -64,9 +90,20 @@ function edit(service: Service): void {
     buffer: String(service.buffer_min),
     price: (service.price_cents / 100).toFixed(2),
     deposit: (service.deposit_cents / 100).toFixed(2),
+    customLeadTime: service.booking_lead_time_minutes !== null,
+    leadTimeValue: String(leadTime.value),
+    leadTimeUnit: leadTime.unit,
   })
   error.value = ''
   notice.value = ''
+}
+
+function enableCustomLeadTime(): void {
+  if (!draft.customLeadTime) return
+
+  const leadTime = bookingLeadTimeParts(defaultBookingLeadTime.value)
+  draft.leadTimeValue = String(leadTime.value)
+  draft.leadTimeUnit = leadTime.unit
 }
 
 function toCents(value: string): number | null {
@@ -88,6 +125,21 @@ async function save(): Promise<void> {
     return
   }
 
+  const leadTimeValue = Number(draft.leadTimeValue)
+  const bookingLeadTimeMinutes = draft.customLeadTime
+    ? toBookingLeadTimeMinutes(leadTimeValue, draft.leadTimeUnit)
+    : null
+  if (draft.customLeadTime && (
+    !Number.isSafeInteger(leadTimeValue)
+    || leadTimeValue < 0
+    || bookingLeadTimeMinutes === null
+    || !Number.isSafeInteger(bookingLeadTimeMinutes)
+    || bookingLeadTimeMinutes > 2147483647
+  )) {
+    error.value = 'Укажите корректный срок до записи для услуги.'
+    return
+  }
+
   saving.value = true
   error.value = ''
   notice.value = ''
@@ -99,6 +151,7 @@ async function save(): Promise<void> {
     buffer_min: Number(draft.buffer),
     price_cents: price,
     deposit_cents: deposit,
+    booking_lead_time_minutes: bookingLeadTimeMinutes,
   }
 
   try {
@@ -179,6 +232,35 @@ onMounted(load)
           <span>Предоплата, {{ tenant.tenant?.currency ?? 'USD' }}</span>
           <input v-model="draft.deposit" type="number" min="0" step="0.01" required />
         </label>
+        <label class="checkbox-field field--wide">
+          <input
+            v-model="draft.customLeadTime"
+            type="checkbox"
+            @change="enableCustomLeadTime"
+          />
+          <span>Установить отдельный срок до записи для этой услуги</span>
+        </label>
+        <p v-if="!draft.customLeadTime" class="field-help field--wide">
+          По умолчанию: за {{ formatBookingLeadTime(defaultBookingLeadTime) }}.
+        </p>
+        <template v-else>
+          <label class="field">
+            <span>Минимальный срок</span>
+            <input v-model="draft.leadTimeValue" type="number" min="0" step="1" required />
+          </label>
+          <label class="field">
+            <span>Единица времени</span>
+            <select v-model="draft.leadTimeUnit">
+              <option
+                v-for="unit in bookingLeadTimeUnits"
+                :key="unit.value"
+                :value="unit.value"
+              >
+                {{ unit.label }}
+              </option>
+            </select>
+          </label>
+        </template>
         <div class="form-actions">
           <BaseButton type="submit" :loading="saving">
             {{ editingId ? 'Сохранить изменения' : 'Добавить услугу' }}
@@ -200,7 +282,10 @@ onMounted(load)
           <span class="service-card__status">{{ service.is_active ? 'Активна' : 'Отключена' }}</span>
           <h3>{{ service.name }}</h3>
           <p v-if="service.description">{{ service.description }}</p>
-          <small>{{ service.duration_min }} мин · буфер {{ service.buffer_min }} мин</small>
+          <small>
+            {{ service.duration_min }} мин · буфер {{ service.buffer_min }} мин · запись за
+            {{ formatBookingLeadTime(service.booking_lead_time_minutes ?? defaultBookingLeadTime) }}
+          </small>
         </div>
         <div class="service-card__price">
           <strong>{{ formatMoney(service.price_cents, tenant.tenant?.currency ?? 'USD') }}</strong>
@@ -303,6 +388,37 @@ onMounted(load)
 
 .field textarea {
   resize: vertical;
+}
+
+.field select {
+  background: #fff;
+  border: 1px solid #d5dfd8;
+  border-radius: 0.6rem;
+  color: #23392d;
+  font: inherit;
+  min-height: 2.6rem;
+  padding: 0.55rem 0.65rem;
+  width: 100%;
+}
+
+.checkbox-field {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.checkbox-field input {
+  accent-color: #31574e;
+  height: 1rem;
+  width: 1rem;
+}
+
+.checkbox-field span,
+.field-help {
+  color: #65756b;
+  font-size: 0.78rem;
+  font-weight: 650;
+  margin: 0;
 }
 
 .form-actions {

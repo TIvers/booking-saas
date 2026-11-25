@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, BookingRecord, PaginatedMeta } from '@/api/types'
+import { getBookingTimer } from '@/composables/bookingTimer'
 import { dateInTimezone, formatSlotTime } from '@/composables/useTimezone'
 import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
@@ -24,7 +25,9 @@ const bookings = ref<BookingRecord[]>([])
 const meta = ref<PaginatedMeta | null>(null)
 const loading = ref(false)
 const error = ref('')
+const now = ref(Date.now())
 const weekStart = ref(mondayOf(dateInTimezone(tenant.tenant?.timezone ?? 'UTC')))
+let clockInterval: number | undefined
 
 const weekDates = computed(() =>
   Array.from({ length: 7 }, (_, index) => addDays(weekStart.value, index)),
@@ -111,7 +114,16 @@ function statusLabel(status: BookingRecord['status']): string {
   return labels[status]
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  clockInterval = window.setInterval(() => {
+    now.value = Date.now()
+  }, 60_000)
+})
+
+onUnmounted(() => {
+  if (clockInterval !== undefined) window.clearInterval(clockInterval)
+})
 </script>
 
 <template>
@@ -173,12 +185,23 @@ onMounted(load)
             v-for="booking in day.bookings"
             :key="booking.id"
             class="calendar-booking"
-            :class="`calendar-booking--${booking.status}`"
+            :class="[
+              `calendar-booking--${booking.status}`,
+              { 'calendar-booking--overdue': getBookingTimer(booking, now)?.state === 'overdue' },
+            ]"
           >
             <strong>{{ formatSlotTime(booking.starts_at, booking.staff.location.timezone) }}</strong>
             <span>{{ booking.service.name }}</span>
             <small>{{ booking.customer.name }}</small>
             <small>{{ booking.staff.display_name }}</small>
+            <span
+              v-if="getBookingTimer(booking, now)?.state === 'overdue'"
+              class="calendar-booking__overdue"
+              :title="getBookingTimer(booking, now)?.label"
+              aria-label="Просроченная запись"
+            >
+              ⚠ Просрочено
+            </span>
             <span class="calendar-booking__status">{{ statusLabel(booking.status) }}</span>
           </article>
         </section>
@@ -301,6 +324,17 @@ onMounted(load)
 .calendar-booking--cancelled,
 .calendar-booking--no_show {
   opacity: 0.65;
+}
+
+.calendar-booking--overdue {
+  border-color: #efb6aa;
+  border-left-color: #b64c3c;
+}
+
+.calendar-booking__overdue {
+  color: #a63f34;
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .calendar-booking > strong {

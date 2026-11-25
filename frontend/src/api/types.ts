@@ -13,6 +13,7 @@ export interface Service {
   price_cents: number
   deposit_cents: number
   is_active: boolean
+  booking_lead_time_minutes: number | null
 }
 
 export interface StaffMember {
@@ -106,6 +107,12 @@ export interface DashboardData {
     bookings_count: number
   }[]
   upcoming: BookingRecord[]
+}
+
+export interface BookingSettings {
+  allow_customer_rescheduling: boolean
+  max_customer_reschedules: number | null
+  booking_lead_time_minutes: number
 }
 
 export interface WorkScheduleRange {

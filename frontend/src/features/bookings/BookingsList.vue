@@ -8,6 +8,8 @@ import type {
   PaginatedMeta,
   Slot,
 } from '@/api/types'
+import { getBookingTimer } from '@/composables/bookingTimer'
+import { getRescheduleChanges, rescheduleHistoryTooltip } from '@/composables/rescheduleHistory'
 import { dateInTimezone, formatMoney, formatSlotDateTime, formatSlotTime } from '@/composables/useTimezone'
 import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
@@ -267,6 +269,20 @@ onBeforeUnmount(() => {
           <span class="status-chip" :class="`status-chip--${booking.status}`">
             {{ statusLabel(booking.status) }}
           </span>
+          <span
+            v-if="getRescheduleChanges(booking).length"
+            class="status-chip status-chip--rescheduled"
+            :title="rescheduleHistoryTooltip(booking)"
+            tabindex="0"
+          >
+            Перенесена<span v-if="getRescheduleChanges(booking).length > 1"> ×{{ getRescheduleChanges(booking).length }}</span>
+          </span>
+          <span
+            v-if="getBookingTimer(booking, now)?.state === 'overdue'"
+            class="status-chip status-chip--overdue"
+          >
+            {{ getBookingTimer(booking, now)?.label }}
+          </span>
         </div>
         <div class="booking-card__details">
           <strong>{{ booking.service.name }}</strong>
@@ -275,9 +291,16 @@ onBeforeUnmount(() => {
           </span>
           <span>{{ booking.staff.display_name }} · {{ booking.staff.location.name }}</span>
         </div>
-        <div v-if="booking.changes?.some((change) => change.reason)" class="booking-comments">
-          <p v-for="change in booking.changes" v-show="change.reason" :key="change.id">
-            <strong>{{ change.action === 'cancelled' ? 'Причина отмены' : 'Причина переноса' }}:</strong>
+        <div
+          v-if="booking.changes?.some((change) => change.action === 'cancelled' && change.reason)"
+          class="booking-comments"
+        >
+          <p
+            v-for="change in booking.changes"
+            v-show="change.action === 'cancelled' && change.reason"
+            :key="change.id"
+          >
+            <strong>Причина отмены:</strong>
             {{ change.reason }}
           </p>
         </div>
@@ -587,6 +610,17 @@ onBeforeUnmount(() => {
 .status-chip--no_show {
   background: #f9e9e6;
   color: #963f35;
+}
+
+.status-chip--rescheduled {
+  background: #eaf3ff;
+  color: #315e9b;
+  cursor: help;
+}
+
+.status-chip--overdue {
+  background: #fff0ed;
+  color: #a63f34;
 }
 
 .status-chip--completed {

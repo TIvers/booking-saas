@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Booking;
 
 use App\Enums\BookingStatus;
+use App\Enums\Role;
 use App\Exceptions\SlotAlreadyTakenException;
 use App\Jobs\ReleaseExpiredReservations;
 use App\Jobs\SendTelegramNotification;
@@ -25,10 +26,11 @@ class RescheduleBookingAction
         CarbonImmutable $startsAt,
         ?int $actorUserId = null,
         ?string $reason = null,
+        ?Role $actorRole = null,
     ): Booking
     {
         try {
-            return DB::transaction(function () use ($booking, $startsAt, $actorUserId, $reason): Booking {
+            return DB::transaction(function () use ($booking, $startsAt, $actorUserId, $reason, $actorRole): Booking {
                 $booking = Booking::query()
                     ->lockForUpdate()
                     ->findOrFail($booking->getKey());
@@ -64,6 +66,21 @@ class RescheduleBookingAction
 
                 if ($booking->starts_at->equalTo($startsAt)) {
                     return $booking;
+                }
+
+                if ($actorRole === Role::Customer) {
+                    $tenant = app('currentTenant');
+                    if (! $tenant->allow_customer_rescheduling) {
+                        abort(403, 'Customer rescheduling is disabled.');
+                    }
+
+                    $maximumReschedules = $tenant->max_customer_reschedules;
+                    if (
+                        $maximumReschedules !== null
+                        && $booking->changes()->where('action', 'rescheduled')->count() >= $maximumReschedules
+                    ) {
+                        abort(409, 'The customer rescheduling limit has been reached.');
+                    }
                 }
 
                 $previousStartsAt = $booking->starts_at;
@@ -129,9 +146,14 @@ class RescheduleBookingAction
         CarbonImmutable $now,
         Booking $booking,
     ): ?Slot {
+        $tenant = app('currentTenant');
         $generator = new SlotGenerator(
             stepMinutes: (int) config('booking.slot_step_minutes'),
-            minLeadMinutes: (int) config('booking.min_lead_minutes'),
+            minLeadMinutes: (int) (
+                $service->booking_lead_time_minutes
+                ?? $tenant->booking_lead_time_minutes
+                ?? config('booking.min_lead_minutes')
+            ),
         );
 
         foreach ($generator->forDay(
