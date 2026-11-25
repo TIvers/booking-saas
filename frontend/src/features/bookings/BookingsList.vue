@@ -548,7 +548,7 @@ onBeforeUnmount(() => {
 }
 
 .booking-card {
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: wrap;
 }
 
