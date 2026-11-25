@@ -13,11 +13,16 @@ class TelegramBotApi
 {
     public function call(string $token, string $method, array $payload = []): Response
     {
+        $apiBase = rtrim((string) config('services.telegram.api_base'), '/');
+        if ($apiBase === '') {
+            throw new RuntimeException('Telegram Bot API base URL is not configured.');
+        }
+
         try {
             $response = Http::acceptJson()
                 ->asJson()
                 ->timeout(10)
-                ->post("https://api.telegram.org/bot{$token}/{$method}", $payload);
+                ->post("{$apiBase}/bot{$token}/{$method}", $payload);
         } catch (ConnectionException) {
             throw new RuntimeException('Unable to reach the Telegram Bot API.');
         }

@@ -48,6 +48,9 @@ npm run dev
 Telegram-ботов через Telegram Bot API нельзя. В @BotFather настройте Main Mini
 App URL вида `https://booking.iversdev.ru/t/{slug}?tg_bot=tenant`; в кабинете
 будут доступны ссылки, которые открывают выбранную услугу.
+В production вызовы Bot API идут через `TG_API_BASE`; запрос включает bot token,
+поэтому используйте только доверенный proxy. Для локального запуска по умолчанию
+используется `https://api.telegram.org`.
 
 Клиент связывает сайт-аккаунт с Telegram из Mini App или создаёт клиентский
 аккаунт через Telegram. Для уведомлений клиент отдельно нажимает «Подключить

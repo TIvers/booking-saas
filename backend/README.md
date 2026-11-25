@@ -46,6 +46,9 @@ owner can connect one manually-created bot under `PUT /api/v1/manage/telegram-bo
 the API validates it with Telegram, stores the token encrypted, configures its
 webhook, and never returns the token. Webhook callbacks are authenticated with
 Telegram's secret-token header and are tenant-scoped.
+Bot API requests use `TG_API_BASE` (default: `https://api.telegram.org`). The
+production environment routes them through the configured trusted proxy; the
+proxy receives bot tokens as part of Bot API request URLs.
 
 ## Catalog and schedules
 
