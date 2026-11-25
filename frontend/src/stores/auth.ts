@@ -8,6 +8,7 @@ export interface AuthUser {
   id: number
   name: string
   email: string | null
+  phone: string | null
   username: string | null
   telegram_linked: boolean
 }
@@ -143,6 +144,17 @@ export const useAuthStore = defineStore('auth', () => {
     if (user.value) user.value.email = response.data.data.email
   }
 
+  async function updateProfile(name: string, phone: string | null): Promise<void> {
+    const response = await api.put<ApiResponse<{ name: string; phone: string | null }>>(
+      '/auth/profile',
+      { name, phone },
+    )
+    if (user.value) {
+      user.value.name = response.data.data.name
+      user.value.phone = response.data.data.phone
+    }
+  }
+
   async function updateUsername(username: string): Promise<void> {
     const response = await api.put<ApiResponse<{ username: string }>>('/auth/username', {
       username,
@@ -171,6 +183,7 @@ export const useAuthStore = defineStore('auth', () => {
     registerWithTelegram,
     linkTelegram,
     updateEmail,
+    updateProfile,
     updateUsername,
     logout,
   }

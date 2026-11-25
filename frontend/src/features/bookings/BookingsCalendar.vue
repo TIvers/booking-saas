@@ -104,7 +104,7 @@ function changeWeek(daysToMove: number): void {
 
 function statusLabel(status: BookingRecord['status']): string {
   const labels: Record<BookingRecord['status'], string> = {
-    pending: 'Ожидает',
+    pending: 'Ожидает оплаты',
     confirmed: 'Подтверждена',
     completed: 'Завершена',
     cancelled: 'Отменена',

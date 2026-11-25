@@ -49,7 +49,7 @@ const lastPage = computed(() => meta.value?.last_page ?? 1)
 
 const statusOptions = [
   { value: '', label: 'Все записи' },
-  { value: 'pending', label: 'Ожидает подтверждения' },
+  { value: 'pending', label: 'Ожидает оплаты' },
   { value: 'confirmed', label: 'Подтверждена' },
   { value: 'completed', label: 'Завершена' },
   { value: 'cancelled', label: 'Отменена' },

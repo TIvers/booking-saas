@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useTenantStore } from '@/stores/tenant'
 import BookingWizard from '@/features/booking/BookingWizard.vue'
 import BookingSettingsView from '@/features/settings/BookingSettingsView.vue'
+import AccountView from '@/features/account/AccountView.vue'
 import BookingsCalendar from '@/features/bookings/BookingsCalendar.vue'
 import BookingsList from '@/features/bookings/BookingsList.vue'
 import MyBookingsView from '@/features/bookings/MyBookingsView.vue'
@@ -35,6 +36,12 @@ export const router = createRouter({
       path: '/t/:tenantSlug/login',
       name: 'login',
       component: LoginView,
+    },
+    {
+      path: '/t/:tenantSlug/account',
+      name: 'account',
+      component: AccountView,
+      meta: { requiresAuthenticated: true },
     },
     {
       path: '/t/:tenantSlug/account/username',
@@ -135,6 +142,7 @@ router.beforeEach(async (to) => {
   const requiresOwner = to.matched.some((record) => record.meta.requiresOwner)
   const requiresSpecialist = to.matched.some((record) => record.meta.requiresSpecialist)
   const requiresCustomer = to.matched.some((record) => record.meta.requiresCustomer)
+  const requiresAuthenticated = to.matched.some((record) => record.meta.requiresAuthenticated)
   const isUsernameSetup = to.name === 'account-username'
   const tenantSlug = typeof to.params.tenantSlug === 'string' ? to.params.tenantSlug : null
   const tenant = useTenantStore()
@@ -158,7 +166,7 @@ router.beforeEach(async (to) => {
   await auth.loadCurrentUser()
   if (
     !auth.isAuthenticated
-    && (requiresManager || requiresSpecialist || requiresCustomer || isUsernameSetup)
+    && (requiresManager || requiresSpecialist || requiresCustomer || requiresAuthenticated || isUsernameSetup)
   ) {
     return {
       name: 'login',

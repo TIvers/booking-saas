@@ -245,6 +245,27 @@ class AuthController
         return response()->json(['data' => ['email' => $user->email]]);
     }
 
+    public function updateProfile(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:32', 'regex:/^\+?[0-9\s().-]{7,32}$/'],
+        ]);
+
+        $user->name = trim($data['name']);
+        $user->phone = isset($data['phone']) ? trim($data['phone']) : null;
+        $user->save();
+
+        return response()->json([
+            'data' => [
+                'name' => $user->name,
+                'phone' => $user->phone,
+            ],
+        ]);
+    }
+
     public function telegram(Request $request, TelegramWebAppAuthenticator $authenticator): JsonResponse
     {
         $data = $request->validate([
@@ -461,6 +482,7 @@ class AuthController
                 'id' => $user->getKey(),
                 'name' => $user->name,
                 'email' => $user->email,
+                'phone' => $user->phone,
                 'username' => $membership->username,
                 'telegram_linked' => $user->identities()
                     ->where('provider', 'telegram')

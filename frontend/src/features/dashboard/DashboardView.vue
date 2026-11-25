@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
                 {{ item.timer.label }}
               </span>
               <span class="status-chip" :class="`status-chip--${item.booking.status}`">
-                {{ item.booking.status === 'pending' ? 'Ожидает' : 'Подтверждена' }}
+                {{ item.booking.status === 'pending' ? 'Ожидает оплаты' : 'Подтверждена' }}
               </span>
             </li>
           </ul>

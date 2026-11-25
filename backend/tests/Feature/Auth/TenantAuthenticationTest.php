@@ -94,6 +94,29 @@ it('returns the authenticated member in the selected tenant', function () {
         ->assertJsonPath('data.tenant.id', $tenant->getKey());
 });
 
+it('allows a member to update their profile name and phone number', function () {
+    $tenant = TenantFixtures::createTenant('profile-tenant');
+    $user = TenantFixtures::createMember($tenant);
+    $headers = ['X-Tenant' => (string) $tenant->getKey()];
+
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->putJson('/api/v1/auth/profile', [
+            'name' => 'Иван Иванов',
+            'phone' => '+7 (900) 123-45-67',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Иван Иванов')
+        ->assertJsonPath('data.phone', '+7 (900) 123-45-67');
+
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->getJson('/api/v1/auth/me')
+        ->assertOk()
+        ->assertJsonPath('data.user.name', 'Иван Иванов')
+        ->assertJsonPath('data.user.phone', '+7 (900) 123-45-67');
+});
+
 it('does not allow a member to use another tenant context', function () {
     $memberTenant = TenantFixtures::createTenant('member-tenant');
     $user = TenantFixtures::createMember($memberTenant);

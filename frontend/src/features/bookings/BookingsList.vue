@@ -45,7 +45,7 @@ let clockInterval: number | undefined
 
 const statusOptions = [
   { value: '', label: 'Все статусы' },
-  { value: 'pending', label: 'Ожидает подтверждения' },
+  { value: 'pending', label: 'Ожидает оплаты' },
   { value: 'confirmed', label: 'Подтверждена' },
   { value: 'completed', label: 'Завершена' },
   { value: 'cancelled', label: 'Отменена' },

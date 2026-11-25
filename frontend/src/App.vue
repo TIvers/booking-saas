@@ -24,6 +24,10 @@ const bookingsLocation = computed(() => ({
   name: 'my-bookings',
   params: { tenantSlug: tenant.slug ?? '' },
 }))
+const accountLocation = computed(() => ({
+  name: 'account',
+  params: { tenantSlug: tenant.slug ?? '' },
+}))
 const managementLocation = computed(() => ({
   name: 'manage-dashboard',
   params: { tenantSlug: tenant.slug ?? '' },
@@ -72,6 +76,9 @@ async function retryTenant(): Promise<void> {
           </RouterLink>
           <RouterLink v-if="auth.canManageTenant || !auth.isAuthenticated" :to="managementLocation">
             Кабинет
+          </RouterLink>
+          <RouterLink v-if="auth.isAuthenticated" :to="accountLocation">
+            Личный кабинет
           </RouterLink>
           <RouterLink v-if="!auth.isAuthenticated" :to="loginLocation">Войти</RouterLink>
           <template v-else>
