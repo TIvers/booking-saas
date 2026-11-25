@@ -16,6 +16,7 @@ class TenantTelegramBot extends Model
         'bot_username',
         'bot_token',
         'webhook_secret_hash',
+        'webhook_ready',
     ];
 
     protected function casts(): array
