@@ -48,7 +48,10 @@ it('creates a Google customer account and reuses it on later sign-ins', function
 
     expect(User::query()->where('email', 'customer@example.test')->count())->toBe(1)
         ->and(UserIdentity::query()->where('provider', 'google')->count())->toBe(1)
-        ->and(Membership::query()->where('role', 'customer')->count())->toBe(1);
+        ->and(Membership::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->getKey())
+            ->where('role', Role::Customer->value)
+            ->count())->toBe(1);
 });
 
 it('links a Google account to an existing organization member by verified email', function () {
