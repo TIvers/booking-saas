@@ -11,6 +11,7 @@ export interface AuthUser {
   phone: string | null
   username: string | null
   telegram_linked: boolean
+  google_linked: boolean
 }
 
 interface AuthPayload {
@@ -123,6 +124,14 @@ export const useAuthStore = defineStore('auth', () => {
     return true
   }
 
+  async function loginWithGoogle(credential: string): Promise<void> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<AuthPayload>>('/auth/google', { credential })
+    setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+  }
+
   async function registerWithTelegram(initData: string, bot: 'main' | 'tenant'): Promise<void> {
     await ensureCsrfCookie()
     const response = await api.post<ApiResponse<AuthPayload>>('/auth/telegram/register', {
@@ -180,6 +189,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     register,
     loginWithTelegram,
+    loginWithGoogle,
     registerWithTelegram,
     linkTelegram,
     updateEmail,

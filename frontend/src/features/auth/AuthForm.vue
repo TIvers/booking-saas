@@ -1,8 +1,37 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { getApiProblem } from '@/api/client'
+import { api, getApiProblem } from '@/api/client'
+import type { ApiResponse } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
+
+interface GoogleCredentialResponse {
+  credential: string
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (options: {
+            client_id: string
+            callback: (response: GoogleCredentialResponse) => void
+          }) => void
+          renderButton: (
+            element: HTMLElement,
+            options: {
+              theme: 'outline'
+              size: 'large'
+              text: 'continue_with'
+              width: number
+            },
+          ) => void
+        }
+      }
+    }
+  }
+}
 
 const props = defineProps<{
   initialMode?: 'login' | 'register'
@@ -30,6 +59,9 @@ const recoveryEmail = ref('')
 const message = ref('')
 const fieldErrors = ref<Record<string, string[]>>({})
 const pendingTelegramInitData = ref('')
+const googleButton = ref<HTMLDivElement | null>(null)
+const googleClientId = ref('')
+const googleError = ref('')
 const telegramAvailable = computed(() => Boolean(window.Telegram?.WebApp?.initData))
 const telegramBot = computed<'main' | 'tenant'>(() =>
   new URLSearchParams(window.location.search).get('tg_bot') === 'tenant' ? 'tenant' : 'main',
@@ -83,6 +115,74 @@ async function submit(): Promise<void> {
     fieldErrors.value = problem.errors
   } finally {
     busy.value = false
+  }
+}
+
+async function signInWithGoogle(response: GoogleCredentialResponse): Promise<void> {
+  if (!response.credential || busy.value) return
+
+  busy.value = true
+  message.value = ''
+  fieldErrors.value = {}
+
+  try {
+    await auth.loginWithGoogle(response.credential)
+    if (auth.requiresUsername) {
+      needsUsernameSetup.value = true
+      return
+    }
+
+    emit('authenticated')
+  } catch (error) {
+    const problem = getApiProblem(error, 'Не удалось войти через Google.')
+    message.value = problem.message
+    fieldErrors.value = problem.errors
+  } finally {
+    busy.value = false
+  }
+}
+
+async function loadGoogleButton(): Promise<void> {
+  try {
+    const response = await api.get<ApiResponse<{ enabled: boolean; client_id: string | null }>>(
+      '/auth/google/config',
+    )
+    if (!response.data.data.enabled || !response.data.data.client_id) return
+
+    googleClientId.value = response.data.data.client_id
+    await new Promise<void>((resolve, reject) => {
+      if (window.google?.accounts.id) {
+        resolve()
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      script.defer = true
+      script.onload = () => resolve()
+      script.onerror = () => reject(new Error('Не удалось загрузить Google Identity Services.'))
+      document.head.appendChild(script)
+    })
+
+    if (!googleButton.value || !window.google?.accounts.id) {
+      throw new Error('Вход через Google сейчас недоступен.')
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: googleClientId.value,
+      callback: (credential) => {
+        void signInWithGoogle(credential)
+      },
+    })
+    window.google.accounts.id.renderButton(googleButton.value, {
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      width: Math.min(googleButton.value.clientWidth, 400),
+    })
+  } catch (error) {
+    googleError.value = getApiProblem(error, 'Не удалось подготовить вход через Google.').message
   }
 }
 
@@ -184,6 +284,8 @@ async function saveUsername(): Promise<void> {
     busy.value = false
   }
 }
+
+onMounted(loadGoogleButton)
 </script>
 
 <template>
@@ -225,7 +327,7 @@ async function saveUsername(): Promise<void> {
 
     <form v-else-if="needsUsernameSetup" class="auth-form__fields" @submit.prevent="saveUsername">
       <p class="form-message form-message--info">
-        Для входа по логину создайте его для существующего аккаунта. До этого вход выполнен по email.
+        Создайте логин для дальнейшего входа по логину и паролю.
       </p>
       <label class="field">
         <span>Новый логин</span>
@@ -269,6 +371,8 @@ async function saveUsername(): Promise<void> {
     </div>
 
     <form class="auth-form__fields" @submit.prevent="submit">
+      <div v-if="googleClientId" ref="googleButton" class="google-button" />
+      <p v-if="googleError" class="form-message" role="alert">{{ googleError }}</p>
       <BaseButton
         v-if="telegramAvailable && !pendingTelegramInitData"
         type="button"
@@ -417,6 +521,12 @@ async function saveUsername(): Promise<void> {
 
 .auth-form__submit {
   width: 100%;
+}
+
+.google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 2.5rem;
 }
 
 .field {

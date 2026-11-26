@@ -10,6 +10,7 @@ use App\Models\Staff;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\UserIdentity;
+use App\Services\Auth\GoogleIdentityVerifier;
 use App\Services\Telegram\TelegramWebAppAuthenticator;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -266,6 +267,103 @@ class AuthController
         ]);
     }
 
+    public function googleConfig(): JsonResponse
+    {
+        $clientId = config('services.google.client_id');
+
+        return response()->json([
+            'data' => [
+                'enabled' => is_string($clientId) && $clientId !== '',
+                'client_id' => is_string($clientId) && $clientId !== '' ? $clientId : null,
+            ],
+        ]);
+    }
+
+    public function google(Request $request, GoogleIdentityVerifier $verifier): JsonResponse
+    {
+        $clientId = config('services.google.client_id');
+
+        if (! is_string($clientId) || $clientId === '') {
+            return response()->json(['message' => 'Google sign-in is not configured.'], 503);
+        }
+
+        $data = $request->validate([
+            'credential' => ['required', 'string', 'max:8192'],
+        ]);
+        $google = $verifier->verify($data['credential']);
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+
+        [$user, $membership] = DB::transaction(function () use ($google): array {
+            DB::select("SELECT set_config('app.google_identity_lookup', 'on', true)");
+            DB::select("SELECT set_config('app.google_email_lookup', 'on', true)");
+
+            $identity = UserIdentity::query()
+                ->where('provider', 'google')
+                ->where('provider_subject', $google['sub'])
+                ->first();
+            $userId = $identity?->user_id;
+
+            if ($userId === null) {
+                $existingUser = User::query()
+                    ->whereRaw('LOWER(email) = ?', [$google['email']])
+                    ->first(['id']);
+                $userId = $existingUser?->getKey();
+            }
+
+            if ($userId === null) {
+                $userId = (int) DB::selectOne(
+                    "SELECT nextval(pg_get_serial_sequence('users', 'id')) AS id"
+                )->id;
+                $name = trim($google['name'] ?? '');
+                $name = $name !== '' ? $name : explode('@', $google['email'], 2)[0];
+
+                DB::table('users')->insert([
+                    'id' => $userId,
+                    'name' => mb_substr($name, 0, 255),
+                    'email' => $google['email'],
+                    'password' => Hash::make(Str::random(64)),
+                    'email_verified_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $membership = Membership::query()
+                ->where('user_id', $userId)
+                ->first();
+
+            if ($membership === null) {
+                $membership = Membership::query()->create([
+                    'user_id' => $userId,
+                    'role' => Role::Customer,
+                ]);
+            }
+
+            if ($identity === null) {
+                UserIdentity::query()->create([
+                    'user_id' => $userId,
+                    'provider' => 'google',
+                    'provider_subject' => $google['sub'],
+                    'email' => $google['email'],
+                    'email_verified_at' => now(),
+                ]);
+            }
+
+            return [
+                User::query()->findOrFail($userId),
+                $membership,
+            ];
+        });
+
+        Auth::guard('web')->login($user, true);
+        $request->session()->regenerate();
+
+        return response()->json([
+            'data' => $this->userPayload($user, $tenant, $membership),
+        ]);
+    }
+
     public function telegram(Request $request, TelegramWebAppAuthenticator $authenticator): JsonResponse
     {
         $data = $request->validate([
@@ -486,6 +584,9 @@ class AuthController
                 'username' => $membership->username,
                 'telegram_linked' => $user->identities()
                     ->where('provider', 'telegram')
+                    ->exists(),
+                'google_linked' => $user->identities()
+                    ->where('provider', 'google')
                     ->exists(),
             ],
             'tenant' => [

@@ -31,8 +31,23 @@ npm run dev
 после заполнения каталога используется `/t/studio-oliva`.
 
 Клиенты и специалисты входят по логину и паролю; владелец и менеджер —
-по email и паролю. При создании карточки специалиста владелец организации
-может привязать новый аккаунт с tenant-scoped логином.
+по email и паролю. Также доступен вход через Google: подтверждённый email
+автоматически связывается с существующим аккаунтом организации, а для нового
+пользователя создаётся клиентский аккаунт с последующей настройкой логина.
+При создании карточки специалиста владелец организации может привязать новый
+аккаунт с tenant-scoped логином.
+
+## Google
+
+Создайте OAuth Client ID типа «Web application» в Google Cloud Console и
+добавьте разрешённые JavaScript origins: `https://booking.iversdev.ru` и
+origin локального сайта разработки. Секрет OAuth не требуется: вход проверяет
+подпись Google ID token на backend. Серверу требуется исходящий HTTPS-доступ к
+`www.googleapis.com` для получения сертификатов подписи.
+
+Для production задайте GitHub Actions Variable `GOOGLE_CLIENT_ID`. Локально
+укажите тот же Client ID в `backend/.env` как `GOOGLE_CLIENT_ID`. Пока Client ID
+не задан, кнопка Google-входа не показывается.
 
 ## Telegram
 
@@ -83,7 +98,7 @@ Telegram» и подтверждает запуск бота. После сог�
 1. Добавьте DNS A-запись `booking` на IP сервера с доменом `iversdev.ru`.
 2. Установите Docker через [scripts/setup-self-hosted-runner.sh](./scripts/setup-self-hosted-runner.sh).
 3. Зарегистрируйте GitHub Actions runner с labels `self-hosted,linux,x64,booking-saas`.
-4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `DB_APP_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `DEMO_OWNER_EMAIL`, `DEMO_OWNER_PASSWORD`; для входа через основной Telegram-бот также добавьте `TELEGRAM_MAIN_BOT_TOKEN`.
+4. Добавьте в GitHub Secrets: `APP_KEY`, `POSTGRES_PASSWORD`, `DB_APP_PASSWORD`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `DEMO_OWNER_EMAIL`, `DEMO_OWNER_PASSWORD`; для входа через основной Telegram-бот также добавьте `TELEGRAM_MAIN_BOT_TOKEN`. Для Google-входа задайте Actions Variable `GOOGLE_CLIENT_ID`.
    `POSTGRES_PASSWORD` используется привилегированной ролью для миграций, а приложение подключается ограниченной ролью `booking_app`.
    Создайте `DB_APP_PASSWORD` как URL-safe пароль длиной не менее 32 символов, например локально командой `openssl rand -hex 32`, и сохраните только в GitHub Secrets.
    `DEMO_OWNER_EMAIL` и `DEMO_OWNER_PASSWORD` задают вход владельца демо-организации; пароль должен быть длиной не менее 12 символов (его можно сгенерировать `openssl rand -hex 32`). Не передавайте пароль в чат и не сохраняйте его в файлах репозитория.

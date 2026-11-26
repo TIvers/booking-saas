@@ -22,6 +22,8 @@ Route::prefix('v1')
         Route::get('/tenant', [AuthController::class, 'tenant']);
         Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:6,1');
         Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:6,1');
+        Route::get('/auth/google/config', [AuthController::class, 'googleConfig']);
+        Route::post('/auth/google', [AuthController::class, 'google'])->middleware('throttle:10,1');
         Route::post('/auth/telegram', [AuthController::class, 'telegram'])->middleware('throttle:10,1');
         Route::post('/auth/telegram/register', [AuthController::class, 'registerTelegram'])->middleware('throttle:5,1');
         Route::post('/auth/telegram/link', [AuthController::class, 'linkTelegram'])

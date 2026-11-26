@@ -201,8 +201,15 @@ async function connectTelegram(): Promise<void> {
         </div>
       </div>
       <p class="help-text">
-        Сейчас поддерживается привязка Telegram; другие сервисы пока недоступны.
+        Google привязывается автоматически при входе с подтверждённым email, совпадающим с аккаунтом.
+        Также можно подключить Telegram для уведомлений.
       </p>
+      <div class="connection-row">
+        <div>
+          <strong>Google</strong>
+          <span>{{ auth.user?.google_linked ? 'Привязан' : 'Не привязан' }}</span>
+        </div>
+      </div>
       <div class="connection-row">
         <div>
           <strong>Telegram</strong>
@@ -221,7 +228,7 @@ async function connectTelegram(): Promise<void> {
         v-if="!auth.user?.telegram_linked && canLinkTelegram && !telegramInitData"
         class="help-text"
       >
-        Чтобы привязать Telegram, откройте личный кабинет внутри Telegram.
+        Чтобы привязать Telegram, откройте профиль внутри Telegram.
       </p>
       <p v-if="!auth.user?.telegram_linked && !canLinkTelegram" class="help-text">
         Привязка Telegram сейчас доступна для аккаунтов клиентов и специалистов.
