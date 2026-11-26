@@ -24,6 +24,14 @@ Route::prefix('v1')
         Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:6,1');
         Route::get('/auth/google/config', [AuthController::class, 'googleConfig']);
         Route::post('/auth/google', [AuthController::class, 'google'])->middleware('throttle:10,1');
+        Route::post('/auth/telegram/oidc/config', [AuthController::class, 'telegramOidcConfig'])
+            ->middleware('throttle:10,1');
+        Route::post('/auth/telegram/oidc', [AuthController::class, 'telegramOidc'])
+            ->middleware('throttle:10,1');
+        Route::post('/auth/telegram/oidc/register', [AuthController::class, 'registerTelegramOidc'])
+            ->middleware('throttle:5,1');
+        Route::post('/auth/telegram/oidc/link', [AuthController::class, 'linkTelegramOidc'])
+            ->middleware(['auth:sanctum', 'tenant.member', 'throttle:10,1']);
         Route::post('/auth/telegram', [AuthController::class, 'telegram'])->middleware('throttle:10,1');
         Route::post('/auth/telegram/register', [AuthController::class, 'registerTelegram'])->middleware('throttle:5,1');
         Route::post('/auth/telegram/link', [AuthController::class, 'linkTelegram'])

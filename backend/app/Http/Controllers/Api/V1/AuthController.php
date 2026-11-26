@@ -11,6 +11,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\UserIdentity;
 use App\Services\Auth\GoogleIdentityVerifier;
+use App\Services\Telegram\TelegramIdentityTokenVerifier;
 use App\Services\Telegram\TelegramWebAppAuthenticator;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -364,6 +365,213 @@ class AuthController
         ]);
     }
 
+    public function telegramOidcConfig(Request $request): JsonResponse
+    {
+        $clientId = config('services.telegram.login_client_id');
+        $enabled = is_string($clientId) && $clientId !== '';
+
+        if ($enabled) {
+            $request->session()->forget('telegram_oidc_pending');
+            $request->session()->put('telegram_oidc_nonce', bin2hex(random_bytes(32)));
+        }
+
+        return response()->json([
+            'data' => [
+                'enabled' => $enabled,
+                'client_id' => $enabled ? $clientId : null,
+                'nonce' => $enabled ? $request->session()->get('telegram_oidc_nonce') : null,
+            ],
+        ])->header('Cache-Control', 'no-store');
+    }
+
+    public function telegramOidc(Request $request, TelegramIdentityTokenVerifier $verifier): JsonResponse
+    {
+        $data = $request->validate([
+            'id_token' => ['required', 'string', 'max:8192'],
+        ]);
+        $nonce = $request->session()->pull('telegram_oidc_nonce');
+
+        if (! is_string($nonce) || $nonce === '') {
+            throw ValidationException::withMessages([
+                'id_token' => ['The Telegram sign-in session expired. Try again.'],
+            ]);
+        }
+
+        $telegram = $verifier->verify($data['id_token'], $nonce);
+        $this->allowTelegramIdentityLookup();
+        $identity = UserIdentity::query()
+            ->where('provider', 'telegram')
+            ->where('provider_subject', $telegram['sub'])
+            ->first();
+
+        if ($identity === null) {
+            $request->session()->put('telegram_oidc_pending', $telegram);
+
+            return response()->json([
+                'data' => [
+                    'status' => 'unlinked',
+                    'name' => $telegram['name'] ?: 'Пользователь Telegram',
+                ],
+            ]);
+        }
+
+        $request->session()->forget('telegram_oidc_pending');
+        $membership = DB::transaction(function () use ($identity): Membership {
+            return Membership::query()
+                ->where('user_id', $identity->user_id)
+                ->first() ?? Membership::query()->create([
+                    'user_id' => $identity->user_id,
+                    'role' => Role::Customer,
+                ]);
+        });
+
+        abort_unless(
+            in_array($membership->role, [Role::Customer, Role::Staff], true),
+            Response::HTTP_FORBIDDEN,
+            'Telegram sign-in is available only for customers and specialists.',
+        );
+        abort_if(
+            $membership->role === Role::Staff
+            && ! Staff::query()
+                ->where('user_id', $identity->user_id)
+                ->where('is_active', true)
+                ->exists(),
+            Response::HTTP_FORBIDDEN,
+        );
+
+        $user = User::query()->findOrFail($identity->user_id);
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        Auth::guard('web')->login($user);
+        $request->session()->regenerate();
+
+        return response()->json([
+            'data' => $this->userPayload($user, $tenant, $membership),
+        ]);
+    }
+
+    public function registerTelegramOidc(Request $request): JsonResponse
+    {
+        $telegram = $this->pendingTelegramOidcIdentity($request);
+        $this->allowTelegramIdentityLookup();
+
+        if (UserIdentity::query()
+            ->where('provider', 'telegram')
+            ->where('provider_subject', $telegram['sub'])
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'telegram' => ['This Telegram account is already linked. Sign in with Telegram instead.'],
+            ]);
+        }
+
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+
+        try {
+            [$user, $membership] = DB::transaction(function () use ($telegram): array {
+                $userId = (int) DB::selectOne(
+                    "SELECT nextval(pg_get_serial_sequence('users', 'id')) AS id"
+                )->id;
+                $now = now();
+
+                DB::table('users')->insert([
+                    'id' => $userId,
+                    'name' => $telegram['name'] ?: 'Пользователь Telegram',
+                    'email' => null,
+                    'password' => Hash::make(Str::random(64)),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                $membership = Membership::query()->create([
+                    'user_id' => $userId,
+                    'role' => Role::Customer,
+                ]);
+                UserIdentity::query()->create([
+                    'user_id' => $userId,
+                    'provider' => 'telegram',
+                    'provider_subject' => $telegram['sub'],
+                    'email' => null,
+                    'email_verified_at' => null,
+                ]);
+
+                return [User::query()->findOrFail($userId), $membership];
+            });
+        } catch (QueryException $exception) {
+            if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
+                throw $exception;
+            }
+
+            throw ValidationException::withMessages([
+                'telegram' => ['This Telegram account was registered in another request. Sign in with Telegram instead.'],
+            ]);
+        }
+
+        $request->session()->forget('telegram_oidc_pending');
+        Auth::guard('web')->login($user);
+        $request->session()->regenerate();
+
+        return response()->json([
+            'data' => $this->userPayload($user, $tenant, $membership),
+        ], 201);
+    }
+
+    public function linkTelegramOidc(Request $request): JsonResponse
+    {
+        $membership = $this->membership($request);
+        abort_unless(
+            in_array($membership->role, [Role::Customer, Role::Staff], true),
+            Response::HTTP_FORBIDDEN,
+        );
+        abort_if(
+            $membership->role === Role::Staff
+            && ! Staff::query()
+                ->where('user_id', $request->user()->getAuthIdentifier())
+                ->where('is_active', true)
+                ->exists(),
+            Response::HTTP_FORBIDDEN,
+        );
+
+        $telegram = $this->pendingTelegramOidcIdentity($request);
+        $this->allowTelegramIdentityLookup();
+        $existing = UserIdentity::query()
+            ->where('provider', 'telegram')
+            ->where('provider_subject', $telegram['sub'])
+            ->first();
+
+        if ($existing !== null && (int) $existing->user_id !== (int) $request->user()->getAuthIdentifier()) {
+            throw ValidationException::withMessages([
+                'telegram' => ['This Telegram account is linked to another site account.'],
+            ]);
+        }
+
+        try {
+            UserIdentity::query()->firstOrCreate(
+                [
+                    'provider' => 'telegram',
+                    'provider_subject' => $telegram['sub'],
+                ],
+                [
+                    'user_id' => $request->user()->getAuthIdentifier(),
+                    'email' => null,
+                    'email_verified_at' => null,
+                ],
+            );
+        } catch (QueryException $exception) {
+            if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
+                throw $exception;
+            }
+
+            throw ValidationException::withMessages([
+                'telegram' => ['This Telegram account is linked to another site account.'],
+            ]);
+        }
+
+        $request->session()->forget('telegram_oidc_pending');
+
+        return response()->json(['data' => ['linked' => true]]);
+    }
+
     public function telegram(Request $request, TelegramWebAppAuthenticator $authenticator): JsonResponse
     {
         $data = $request->validate([
@@ -610,6 +818,29 @@ class AuthController
     private function allowTelegramIdentityLookup(): void
     {
         DB::select("SELECT set_config('app.telegram_identity_lookup', 'on', true)");
+    }
+
+    /**
+     * @return array{sub: string, name: ?string}
+     */
+    private function pendingTelegramOidcIdentity(Request $request): array
+    {
+        $telegram = $request->session()->get('telegram_oidc_pending');
+
+        if (
+            ! is_array($telegram)
+            || ! is_string($telegram['sub'] ?? null)
+            || (isset($telegram['name']) && ! is_string($telegram['name']))
+        ) {
+            throw ValidationException::withMessages([
+                'telegram' => ['Telegram sign-in has expired. Start again.'],
+            ]);
+        }
+
+        return [
+            'sub' => $telegram['sub'],
+            'name' => is_string($telegram['name'] ?? null) ? $telegram['name'] : null,
+        ];
     }
 
     /**

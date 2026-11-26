@@ -13,7 +13,7 @@ const queryClient = new QueryClient({
   },
 })
 
-window.Telegram?.WebApp.ready()
+window.Telegram?.WebApp?.ready()
 
 createApp(App)
   .use(createPinia())

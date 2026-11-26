@@ -124,6 +124,21 @@ export const useAuthStore = defineStore('auth', () => {
     return true
   }
 
+  async function loginWithTelegramOidc(idToken: string): Promise<boolean> {
+    await ensureCsrfCookie()
+    const response = await api.post<
+      ApiResponse<AuthPayload | { status: 'unlinked'; name: string }>
+    >('/auth/telegram/oidc', { id_token: idToken })
+    const payload = response.data.data
+
+    if (!('user' in payload)) return false
+
+    setAuth(payload)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+    return true
+  }
+
   async function loginWithGoogle(credential: string): Promise<void> {
     await ensureCsrfCookie()
     const response = await api.post<ApiResponse<AuthPayload>>('/auth/google', { credential })
@@ -143,8 +158,21 @@ export const useAuthStore = defineStore('auth', () => {
     initialized.value = true
   }
 
+  async function registerWithTelegramOidc(): Promise<void> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<AuthPayload>>('/auth/telegram/oidc/register')
+    setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+  }
+
   async function linkTelegram(initData: string, bot: 'main' | 'tenant'): Promise<void> {
     await api.post('/auth/telegram/link', { init_data: initData, bot })
+    if (user.value) user.value.telegram_linked = true
+  }
+
+  async function linkTelegramOidc(): Promise<void> {
+    await api.post('/auth/telegram/oidc/link')
     if (user.value) user.value.telegram_linked = true
   }
 
@@ -189,9 +217,12 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     register,
     loginWithTelegram,
+    loginWithTelegramOidc,
     loginWithGoogle,
     registerWithTelegram,
+    registerWithTelegramOidc,
     linkTelegram,
+    linkTelegramOidc,
     updateEmail,
     updateProfile,
     updateUsername,

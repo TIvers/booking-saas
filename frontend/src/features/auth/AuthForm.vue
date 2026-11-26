@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { api, getApiProblem } from '@/api/client'
+import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
 import type { ApiResponse } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 
@@ -59,9 +59,13 @@ const recoveryEmail = ref('')
 const message = ref('')
 const fieldErrors = ref<Record<string, string[]>>({})
 const pendingTelegramInitData = ref('')
+const pendingTelegramOidc = ref(false)
 const googleButton = ref<HTMLDivElement | null>(null)
 const googleClientId = ref('')
 const googleError = ref('')
+const telegramLoginClientId = ref('')
+const telegramLoginNonce = ref('')
+const telegramError = ref('')
 const telegramAvailable = computed(() => Boolean(window.Telegram?.WebApp?.initData))
 const telegramBot = computed<'main' | 'tenant'>(() =>
   new URLSearchParams(window.location.search).get('tg_bot') === 'tenant' ? 'tenant' : 'main',
@@ -94,13 +98,18 @@ async function submit(): Promise<void> {
         remember: remember.value,
       })
     }
+    const linkingTelegram = Boolean(pendingTelegramInitData.value || pendingTelegramOidc.value)
     if (pendingTelegramInitData.value) {
       await auth.linkTelegram(pendingTelegramInitData.value, telegramBot.value)
       pendingTelegramInitData.value = ''
-      if (auth.user?.email === null) {
-        showRecoveryEmailPrompt.value = true
-        return
-      }
+    }
+    if (pendingTelegramOidc.value) {
+      await auth.linkTelegramOidc()
+      pendingTelegramOidc.value = false
+    }
+    if (linkingTelegram && auth.user?.email === null) {
+      showRecoveryEmailPrompt.value = true
+      return
     }
     if (auth.requiresUsername) {
       needsUsernameSetup.value = true
@@ -150,6 +159,7 @@ async function loadGoogleButton(): Promise<void> {
     if (!response.data.data.enabled || !response.data.data.client_id) return
 
     googleClientId.value = response.data.data.client_id
+    await nextTick()
     await new Promise<void>((resolve, reject) => {
       if (window.google?.accounts.id) {
         resolve()
@@ -186,7 +196,47 @@ async function loadGoogleButton(): Promise<void> {
   }
 }
 
-async function signInWithTelegram(): Promise<void> {
+async function loadTelegramLogin(): Promise<void> {
+  if (telegramAvailable.value) return
+
+  telegramLoginClientId.value = ''
+  telegramLoginNonce.value = ''
+  telegramError.value = ''
+
+  try {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<{
+      enabled: boolean
+      client_id: string | null
+      nonce: string | null
+    }>>('/auth/telegram/oidc/config')
+    if (!response.data.data.enabled || !response.data.data.client_id || !response.data.data.nonce) {
+      return
+    }
+
+    if (!window.Telegram?.Login) {
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = 'https://oauth.telegram.org/js/telegram-login.js'
+        script.async = true
+        script.onload = () => resolve()
+        script.onerror = () => reject(new Error('Не удалось загрузить Telegram Login.'))
+        document.head.appendChild(script)
+      })
+    }
+
+    if (!window.Telegram?.Login) {
+      throw new Error('Вход через Telegram сейчас недоступен.')
+    }
+
+    telegramLoginClientId.value = response.data.data.client_id
+    telegramLoginNonce.value = response.data.data.nonce
+  } catch (error) {
+    telegramError.value = getApiProblem(error, 'Не удалось подготовить вход через Telegram.').message
+  }
+}
+
+async function signInWithTelegramWebApp(): Promise<void> {
   const initData = window.Telegram?.WebApp?.initData
   if (!initData) return
 
@@ -217,15 +267,85 @@ async function signInWithTelegram(): Promise<void> {
   }
 }
 
+function signInWithTelegram(): void {
+  const initData = window.Telegram?.WebApp?.initData
+
+  if (initData) {
+    void signInWithTelegramWebApp()
+    return
+  }
+
+  if (busy.value) return
+
+  if (!telegramLoginClientId.value || !telegramLoginNonce.value || !window.Telegram?.Login) {
+    telegramError.value = 'Вход через Telegram сейчас недоступен. Попробуйте обновить страницу.'
+    return
+  }
+
+  busy.value = true
+  message.value = ''
+  fieldErrors.value = {}
+  telegramError.value = ''
+
+  window.Telegram.Login.auth(
+    {
+      client_id: telegramLoginClientId.value,
+      nonce: telegramLoginNonce.value,
+      scope: ['profile'],
+      lang: 'ru',
+    },
+    (result) => {
+      void finishTelegramOidcLogin(result)
+    },
+  )
+}
+
+async function finishTelegramOidcLogin(result: TelegramLoginResult): Promise<void> {
+  try {
+    if (!result.id_token) {
+      if (result.error !== 'popup_closed') {
+        message.value = 'Не удалось войти через Telegram. Попробуйте ещё раз.'
+      }
+      return
+    }
+
+    const signedIn = await auth.loginWithTelegramOidc(result.id_token)
+    if (signedIn) {
+      if (auth.user?.email === null) {
+        showRecoveryEmailPrompt.value = true
+        return
+      }
+      emit('authenticated')
+      return
+    }
+
+    pendingTelegramOidc.value = true
+    mode.value = 'login'
+    message.value = 'Telegram ещё не связан с аккаунтом. Войдите в существующий аккаунт или создайте новый.'
+  } catch (error) {
+    const problem = getApiProblem(error, 'Не удалось войти через Telegram.')
+    message.value = problem.message
+    fieldErrors.value = problem.errors
+    await loadTelegramLogin()
+  } finally {
+    busy.value = false
+  }
+}
+
 async function createTelegramAccount(): Promise<void> {
-  if (!pendingTelegramInitData.value) return
+  if (!pendingTelegramInitData.value && !pendingTelegramOidc.value) return
 
   busy.value = true
   message.value = ''
 
   try {
-    await auth.registerWithTelegram(pendingTelegramInitData.value, telegramBot.value)
-    pendingTelegramInitData.value = ''
+    if (pendingTelegramOidc.value) {
+      await auth.registerWithTelegramOidc()
+      pendingTelegramOidc.value = false
+    } else {
+      await auth.registerWithTelegram(pendingTelegramInitData.value, telegramBot.value)
+      pendingTelegramInitData.value = ''
+    }
     if (auth.user?.email === null) {
       showRecoveryEmailPrompt.value = true
       return
@@ -274,6 +394,10 @@ async function saveUsername(): Promise<void> {
       await auth.linkTelegram(pendingTelegramInitData.value, telegramBot.value)
       pendingTelegramInitData.value = ''
     }
+    if (pendingTelegramOidc.value) {
+      await auth.linkTelegramOidc()
+      pendingTelegramOidc.value = false
+    }
     needsUsernameSetup.value = false
     emit('authenticated')
   } catch (error) {
@@ -285,7 +409,10 @@ async function saveUsername(): Promise<void> {
   }
 }
 
-onMounted(loadGoogleButton)
+onMounted(() => {
+  void loadGoogleButton()
+  void loadTelegramLogin()
+})
 </script>
 
 <template>
@@ -371,18 +498,6 @@ onMounted(loadGoogleButton)
     </div>
 
     <form class="auth-form__fields" @submit.prevent="submit">
-      <div v-if="googleClientId" ref="googleButton" class="google-button" />
-      <p v-if="googleError" class="form-message" role="alert">{{ googleError }}</p>
-      <BaseButton
-        v-if="telegramAvailable && !pendingTelegramInitData"
-        type="button"
-        variant="secondary"
-        :loading="busy"
-        class="auth-form__submit"
-        @click="signInWithTelegram"
-      >
-        Продолжить через Telegram
-      </BaseButton>
       <label v-if="mode === 'register'" class="field">
         <span>Ваше имя</span>
         <input v-model.trim="name" autocomplete="name" required maxlength="255" />
@@ -457,7 +572,7 @@ onMounted(loadGoogleButton)
       <p v-if="message" class="form-message" role="alert">{{ message }}</p>
 
       <BaseButton
-        v-if="pendingTelegramInitData"
+        v-if="pendingTelegramInitData || pendingTelegramOidc"
         type="button"
         :loading="busy"
         class="auth-form__submit"
@@ -469,6 +584,37 @@ onMounted(loadGoogleButton)
         {{ mode === 'register' ? 'Создать аккаунт и записаться' : 'Войти' }}
       </BaseButton>
     </form>
+
+    <div
+      v-if="googleClientId || telegramAvailable || telegramLoginClientId || googleError || telegramError"
+      class="auth-form__providers"
+    >
+      <div class="auth-form__separator"><span>или</span></div>
+      <div class="auth-form__provider-list">
+        <div v-if="googleClientId" ref="googleButton" class="google-button" />
+        <button
+          v-if="
+            !pendingTelegramInitData
+              && !pendingTelegramOidc
+              && (telegramAvailable || telegramLoginClientId)
+          "
+          type="button"
+          class="auth-form__telegram"
+          :disabled="busy"
+          @click="signInWithTelegram"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path
+              d="M21.7 4.4 18.6 19c-.2 1-1 1.2-1.8.7l-4.9-3.6-2.4 2.3c-.3.3-.5.5-1 .5l.4-5 9.1-8.2c.4-.4-.1-.6-.6-.3L6.2 12.6l-4.8-1.5c-1-.3-1-1 .2-1.5L20.3 2.4c.9-.3 1.7.2 1.4 2Z"
+              fill="currentColor"
+            />
+          </svg>
+          <span>Продолжить через Telegram</span>
+        </button>
+      </div>
+      <p v-if="googleError" class="form-message" role="alert">{{ googleError }}</p>
+      <p v-if="telegramError" class="form-message" role="alert">{{ telegramError }}</p>
+    </div>
     </template>
   </section>
 </template>
@@ -526,7 +672,68 @@ onMounted(loadGoogleButton)
 .google-button {
   display: flex;
   justify-content: center;
-  min-height: 2.5rem;
+  min-height: 2.75rem;
+  width: 100%;
+}
+
+.auth-form__providers {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1.1rem;
+}
+
+.auth-form__provider-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.auth-form__separator {
+  align-items: center;
+  color: #78847e;
+  display: flex;
+  font-size: 0.85rem;
+  gap: 0.75rem;
+}
+
+.auth-form__separator::before,
+.auth-form__separator::after {
+  background: #d7dfd9;
+  content: '';
+  flex: 1;
+  height: 1px;
+}
+
+.auth-form__telegram {
+  align-items: center;
+  background: #f5f7f8;
+  border: 1px solid #d1dce3;
+  border-radius: 0.5rem;
+  color: #17212b;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  gap: 0.5rem;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.8rem;
+  width: 100%;
+}
+
+.auth-form__telegram:hover:not(:disabled) {
+  background: #edf2f4;
+}
+
+.auth-form__telegram:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.auth-form__telegram svg {
+  color: #168de2;
+  height: 1.2rem;
+  width: 1.2rem;
 }
 
 .field {

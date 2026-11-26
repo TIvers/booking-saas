@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api, getApiProblem } from '@/api/client'
 import type { ApiResponse, Booking, DemoPayment, Service, Slot, StaffMember } from '@/api/types'
-import AuthForm from '@/features/auth/AuthForm.vue'
 import ServicePicker from '@/features/booking/ServicePicker.vue'
 import SlotPicker from '@/features/booking/SlotPicker.vue'
 import StaffPicker from '@/features/booking/StaffPicker.vue'
@@ -17,6 +16,7 @@ const queryClient = useQueryClient()
 const tenantStore = useTenantStore()
 const authStore = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const services = ref<Service[]>([])
 const staff = ref<StaffMember[]>([])
 const catalogLoading = ref(true)
@@ -26,13 +26,13 @@ const serviceId = ref<number | null>(null)
 const staffId = ref<number | null>(null)
 const selectedDate = ref('')
 const selectedSlot = ref<Slot | null>(null)
+const pendingSlotStart = ref<string | null>(null)
 const bookingResult = ref<Booking | null>(null)
 const demoPayment = ref<DemoPayment | null>(null)
 const bookingBusy = ref(false)
 const paymentBusy = ref(false)
 const bookingError = ref('')
 const paymentError = ref('')
-const showAuthForm = ref(false)
 
 const timezone = computed(() => tenantStore.tenant?.timezone ?? 'UTC')
 const currency = computed(() => tenantStore.tenant?.currency ?? 'USD')
@@ -69,6 +69,22 @@ watch([serviceId, staffId, selectedDate], () => {
   selectedSlot.value = null
 })
 
+watch([slotsQuery.data, slotsQuery.isFetching], ([availableSlots, isFetching]) => {
+  const startsAt = pendingSlotStart.value
+  if (!startsAt || !availableSlots || isFetching) return
+
+  pendingSlotStart.value = null
+  const restoredSlot = availableSlots.find((slot) => slot.starts_at === startsAt)
+
+  if (restoredSlot) {
+    selectedSlot.value = restoredSlot
+    step.value = 4
+  } else {
+    step.value = 3
+    bookingError.value = 'Выбранное время уже недоступно. Выберите другой свободный слот.'
+  }
+})
+
 async function loadCatalog(): Promise<void> {
   catalogLoading.value = true
   catalogError.value = ''
@@ -84,14 +100,43 @@ async function loadCatalog(): Promise<void> {
     const telegramServiceId = startParam?.match(/^service-([1-9][0-9]*)$/)?.[1]
     const queryServiceId = typeof route.query.service === 'string' ? route.query.service : null
     const requestedServiceId = Number(telegramServiceId ?? queryServiceId)
-    if (Number.isSafeInteger(requestedServiceId) && services.value.some((service) => service.id === requestedServiceId)) {
-      chooseService(requestedServiceId)
+    if (!Number.isSafeInteger(requestedServiceId) || !services.value.some((service) => service.id === requestedServiceId)) {
+      return
     }
+
+    const queryStaffId = typeof route.query.staff === 'string' ? Number(route.query.staff) : NaN
+    const queryDate = typeof route.query.date === 'string' ? route.query.date : ''
+    const querySlot = typeof route.query.slot === 'string' ? route.query.slot : ''
+    const requestedStaff = staff.value.find((member) =>
+      member.id === queryStaffId
+      && member.services.some((service) => service.id === requestedServiceId),
+    )
+
+    if (
+      requestedStaff
+      && isValidDate(queryDate)
+    ) {
+      serviceId.value = requestedServiceId
+      staffId.value = requestedStaff.id
+      selectedDate.value = queryDate
+      pendingSlotStart.value = querySlot || null
+      step.value = 3
+      return
+    }
+
+    chooseService(requestedServiceId)
   } catch (error) {
     catalogError.value = getApiProblem(error, 'Не удалось загрузить каталог.').message
   } finally {
     catalogLoading.value = false
   }
+}
+
+function isValidDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
 
 function chooseService(id: number): void {
@@ -121,7 +166,7 @@ async function confirmBooking(): Promise<void> {
   }
 
   if (!authStore.isAuthenticated) {
-    showAuthForm.value = true
+    navigateToLogin()
     bookingError.value = ''
     return
   }
@@ -149,8 +194,7 @@ async function confirmBooking(): Promise<void> {
 
     if (problem.status === 401) {
       authStore.clear()
-      showAuthForm.value = true
-      bookingError.value = 'Сессия завершилась. Войдите или зарегистрируйтесь ещё раз.'
+      navigateToLogin()
     } else if (problem.status === 409 && problem.code === 'slot_already_taken') {
       selectedSlot.value = null
       step.value = 3
@@ -204,9 +248,26 @@ async function completeDemoPayment(outcome: 'succeeded' | 'failed'): Promise<voi
   }
 }
 
-async function onAuthenticated(): Promise<void> {
-  showAuthForm.value = false
-  await confirmBooking()
+function navigateToLogin(): void {
+  const tenantSlug = tenantStore.slug
+  if (!tenantSlug) return
+
+  const returnQuery: Record<string, string> = {}
+  if (serviceId.value !== null) returnQuery.service = String(serviceId.value)
+  if (staffId.value !== null) returnQuery.staff = String(staffId.value)
+  if (selectedDate.value) returnQuery.date = selectedDate.value
+  if (selectedSlot.value) returnQuery.slot = selectedSlot.value.starts_at
+
+  const redirect = router.resolve({
+    name: 'booking',
+    params: { tenantSlug },
+    query: returnQuery,
+  }).fullPath
+
+  void router.push({
+    name: 'login',
+    query: { tenant: tenantSlug, redirect },
+  })
 }
 
 function startAnotherBooking(): void {
@@ -214,10 +275,10 @@ function startAnotherBooking(): void {
   demoPayment.value = null
   bookingError.value = ''
   paymentError.value = ''
-  showAuthForm.value = false
   serviceId.value = null
   staffId.value = null
   selectedSlot.value = null
+  pendingSlotStart.value = null
   step.value = 1
 }
 
@@ -488,12 +549,6 @@ onMounted(loadCatalog)
             <span>{{ authStore.user?.email }}</span>
           </div>
 
-          <div v-else-if="showAuthForm" class="auth-panel">
-            <h3>Войдите или создайте аккаунт</h3>
-            <p>Это нужно, чтобы сохранить запись и отправить её в ваш список.</p>
-            <AuthForm @authenticated="onAuthenticated" />
-          </div>
-
           <p v-else class="auth-hint">
             Чтобы подтвердить запись, войдите или создайте аккаунт. Выбранные услуга и время сохранятся.
           </p>
@@ -514,10 +569,10 @@ onMounted(loadCatalog)
               }}
             </button>
             <button
-              v-else-if="!showAuthForm"
+              v-else
               type="button"
               class="primary-button"
-              @click="showAuthForm = true"
+              @click="navigateToLogin"
             >
               Войти или зарегистрироваться
             </button>

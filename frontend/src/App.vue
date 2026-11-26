@@ -16,10 +16,9 @@ const bookingLocation = computed(() =>
     ? { name: 'booking', params: { tenantSlug: tenant.slug } }
     : { name: 'home' },
 )
-const loginLocation = computed(() => ({
-  name: 'login',
-  params: { tenantSlug: tenant.slug ?? '' },
-}))
+const loginLocation = computed(() => tenant.slug
+  ? { name: 'login', query: { tenant: tenant.slug } }
+  : { name: 'home' })
 const bookingsLocation = computed(() => ({
   name: 'my-bookings',
   params: { tenantSlug: tenant.slug ?? '' },

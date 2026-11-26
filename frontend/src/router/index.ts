@@ -34,9 +34,19 @@ export const router = createRouter({
       component: BookingWizard,
     },
     {
-      path: '/t/:tenantSlug/login',
+      path: '/login',
       name: 'login',
       component: LoginView,
+    },
+    {
+      path: '/t/:tenantSlug/login',
+      redirect: (to) => ({
+        name: 'login',
+        query: {
+          tenant: to.params.tenantSlug,
+          ...(typeof to.query.redirect === 'string' ? { redirect: to.query.redirect } : {}),
+        },
+      }),
     },
     {
       path: '/t/:tenantSlug/account',
@@ -150,9 +160,19 @@ router.beforeEach(async (to) => {
   const requiresCustomer = to.matched.some((record) => record.meta.requiresCustomer)
   const requiresAuthenticated = to.matched.some((record) => record.meta.requiresAuthenticated)
   const isUsernameSetup = to.name === 'account-username'
-  const tenantSlug = typeof to.params.tenantSlug === 'string' ? to.params.tenantSlug : null
+  const routeTenantSlug = typeof to.params.tenantSlug === 'string' ? to.params.tenantSlug : null
+  const loginTenantSlug = to.name === 'login' && typeof to.query.tenant === 'string'
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(to.query.tenant)
+    ? to.query.tenant
+    : null
+  const tenantSlug = routeTenantSlug ?? loginTenantSlug
   const tenant = useTenantStore()
   const auth = useAuthStore()
+
+  if (to.name === 'login' && !tenantSlug) {
+    return { name: 'home' }
+  }
+
   const tenantChanged = tenant.setSlug(tenantSlug)
 
   if (tenantSlug && (tenantChanged || !tenant.tenant)) {
@@ -176,8 +196,7 @@ router.beforeEach(async (to) => {
   ) {
     return {
       name: 'login',
-      params: { tenantSlug },
-      query: { redirect: to.fullPath },
+      query: { tenant: tenantSlug, redirect: to.fullPath },
     }
   }
 

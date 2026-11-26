@@ -14,8 +14,24 @@ interface TelegramWebApp {
   openTelegramLink(url: string): void
 }
 
+interface TelegramLoginResult {
+  id_token?: string
+  error?: string
+}
+
 interface Window {
   Telegram?: {
-    WebApp: TelegramWebApp
+    WebApp?: TelegramWebApp
+    Login?: {
+      auth: (
+        options: {
+          client_id: string
+          nonce: string
+          scope: string[]
+          lang: string
+        },
+        callback: (result: TelegramLoginResult) => void,
+      ) => void
+    }
   }
 }

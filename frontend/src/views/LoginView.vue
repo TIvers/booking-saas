@@ -7,33 +7,42 @@ import { useAuthStore } from '@/stores/auth'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const isTelegramWebApp = computed(() => Boolean(window.Telegram?.WebApp?.initData))
+const tenantSlug = computed(() =>
+  typeof route.query.tenant === 'string' ? route.query.tenant : '',
+)
 const isManagementRedirect = computed(() => {
   const redirect = route.query.redirect
-  const tenantSlug = route.params.tenantSlug
   return typeof redirect === 'string'
-    && typeof tenantSlug === 'string'
+    && tenantSlug.value !== ''
     && (
-      redirect === `/t/${tenantSlug}/manage`
-      || redirect.startsWith(`/t/${tenantSlug}/manage/`)
+      redirect === `/t/${tenantSlug.value}/manage`
+      || redirect.startsWith(`/t/${tenantSlug.value}/manage/`)
     )
 })
 
 function afterAuthentication(): void {
   const redirect = route.query.redirect
-  const tenantSlug = route.params.tenantSlug
-  const destination =
-    typeof redirect === 'string'
-      && typeof tenantSlug === 'string'
-      && redirect.startsWith(`/t/${tenantSlug}/`)
-      ? redirect
+  const slug = tenantSlug.value
+  const safeRedirect = typeof redirect === 'string' ? tenantRedirect(redirect, slug) : null
+  const destination = safeRedirect
+    ? safeRedirect
     : auth.role === 'staff'
-      ? { name: 'specialist-calendar', params: { tenantSlug } }
+      ? { name: 'specialist-calendar', params: { tenantSlug: slug } }
       : auth.canManageTenant
-        ? { name: 'manage-dashboard', params: { tenantSlug } }
-        : { name: 'booking', params: { tenantSlug } }
+        ? { name: 'manage-dashboard', params: { tenantSlug: slug } }
+        : { name: 'booking', params: { tenantSlug: slug } }
 
   void router.replace(destination)
+}
+
+function tenantRedirect(path: string, slug: string): string | null {
+  if (!slug || !path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return null
+
+  const resolved = router.resolve(path)
+  const belongsToTenant = resolved.params.tenantSlug === slug
+    && (resolved.path === `/t/${slug}` || resolved.path.startsWith(`/t/${slug}/`))
+
+  return belongsToTenant ? resolved.fullPath : null
 }
 </script>
 
@@ -45,7 +54,7 @@ function afterAuthentication(): void {
       <p>Аккаунт нужен, чтобы сохранить запись и управлять ею.</p>
     </div>
     <AuthForm
-      :initial-mode="isManagementRedirect || isTelegramWebApp ? 'login' : 'register'"
+      initial-mode="login"
       @authenticated="afterAuthentication"
     />
   </section>
