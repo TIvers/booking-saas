@@ -119,8 +119,46 @@ return new class extends Migration
 
     public function down(): void
     {
-        throw new RuntimeException(
-            'Account separation duplicates credential records and moves customer data; restore a database backup to roll it back.'
+        DB::statement("SELECT set_config('app.account_merge', 'on', true)");
+
+        $hasDuplicateEmails = DB::table('users')
+            ->whereNotNull('email')
+            ->select('email')
+            ->groupBy('email')
+            ->havingRaw('COUNT(*) > 1')
+            ->exists();
+        $hasDuplicateUsernames = DB::table('users')
+            ->whereNotNull('username')
+            ->selectRaw('LOWER(username)')
+            ->groupByRaw('LOWER(username)')
+            ->havingRaw('COUNT(*) > 1')
+            ->exists();
+        $hasDuplicateTenantUsernames = DB::table('memberships')
+            ->whereNotNull('username')
+            ->select(['tenant_id', 'username'])
+            ->groupBy(['tenant_id', 'username'])
+            ->havingRaw('COUNT(*) > 1')
+            ->exists();
+
+        if ($hasDuplicateEmails || $hasDuplicateUsernames || $hasDuplicateTenantUsernames) {
+            throw new RuntimeException(
+                'Cannot reverse account separation while customer and organization credentials conflict; restore a database backup.'
+            );
+        }
+
+        DB::statement('DROP INDEX IF EXISTS users_account_type_email_lower_unique');
+        DB::statement('DROP INDEX IF EXISTS users_account_type_username_lower_unique');
+        DB::statement('ALTER TABLE users DROP CONSTRAINT users_account_type_check');
+        Schema::table('users', function (Blueprint $table): void {
+            $table->dropColumn('account_type');
+            $table->unique('email', 'users_email_unique');
+        });
+        DB::statement(
+            'CREATE UNIQUE INDEX users_username_lower_unique
+             ON users (LOWER(username)) WHERE username IS NOT NULL'
         );
+        Schema::table('memberships', function (Blueprint $table): void {
+            $table->unique(['tenant_id', 'username'], 'memberships_tenant_username_unique');
+        });
     }
 };

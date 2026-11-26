@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserIdentity;
 use App\Services\Auth\GoogleIdentityVerifier;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\Support\TenantFixtures;
 
@@ -97,6 +98,9 @@ it('keeps Google sign-in separate from an organization account with the same ema
         ->and(User::query()
             ->where('email', 'owner@example.test')
             ->count())->toBe(2);
+
+    TenantFixtures::activate($tenant);
+    DB::table('users')->where('id', $googleIdentity->user_id)->delete();
 });
 
 it('does not allow an organization account to link Google', function () {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\Role;
 use App\Mail\VerifyAccountEmail;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Tests\Support\TenantFixtures;
 
@@ -252,6 +253,9 @@ it('allows identical email and username across customer and organization account
             'password' => 'customer-password',
         ])
         ->assertUnprocessable();
+
+    TenantFixtures::activate($tenant);
+    DB::table('users')->where('id', $customer->getKey())->delete();
 });
 
 it('returns the authenticated member in the selected tenant', function () {

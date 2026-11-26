@@ -61,8 +61,10 @@ configured password, its password and global login move to the current account.
 
 Migration `2026_11_26_000019_separate_customer_and_organization_accounts`
 separates existing mixed customer/organization profiles while preserving
-customer bookings and provider identities on a customer copy. It is intentionally
-irreversible; back up production and test the migration on a database copy first.
+customer bookings and provider identities on a customer copy. Rollback is
+refused if separate accounts now share credentials that the previous schema
+could not represent; back up production and test the migration on a database
+copy first.
 
 Production deployment sends verification email through SMTP. Configure the
 `MAIL_HOST` GitHub secret and the `MAIL_PORT`, `MAIL_SCHEME`, and
