@@ -10,6 +10,7 @@ use App\Models\Staff;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\UserIdentity;
+use App\Services\Auth\AccountMergeService;
 use App\Services\Auth\GoogleIdentityVerifier;
 use App\Services\Telegram\TelegramIdentityTokenVerifier;
 use App\Services\Telegram\TelegramWebAppAuthenticator;
@@ -370,8 +371,11 @@ class AuthController
         ]);
     }
 
-    public function linkGoogle(Request $request, GoogleIdentityVerifier $verifier): JsonResponse
-    {
+    public function linkGoogle(
+        Request $request,
+        GoogleIdentityVerifier $verifier,
+        AccountMergeService $accountMergeService,
+    ): JsonResponse {
         $data = $request->validate([
             'credential' => ['required', 'string', 'max:8192'],
         ]);
@@ -379,30 +383,35 @@ class AuthController
         $userId = (int) $request->user()->getAuthIdentifier();
 
         try {
-            DB::transaction(function () use ($google, $userId): void {
+            $linkResult = DB::transaction(function () use ($google, $userId, $accountMergeService): array {
                 $this->allowGoogleIdentityLookup();
                 $existing = UserIdentity::query()
                     ->where('provider', 'google')
                     ->where('provider_subject', $google['sub'])
                     ->first();
 
-                if ($existing !== null && (int) $existing->user_id !== $userId) {
-                    throw ValidationException::withMessages([
-                        'google' => ['This Google account is linked to another site account.'],
-                    ]);
+                $merged = $existing !== null && (int) $existing->user_id !== $userId
+                    ? $accountMergeService->mergeForIdentity($userId, 'google', $google['sub'])
+                    : false;
+
+                if ($existing === null) {
+                    UserIdentity::query()->firstOrCreate(
+                        [
+                            'provider' => 'google',
+                            'provider_subject' => $google['sub'],
+                        ],
+                        [
+                            'user_id' => $userId,
+                            'email' => $google['email'],
+                            'email_verified_at' => now(),
+                        ],
+                    );
                 }
 
-                UserIdentity::query()->firstOrCreate(
-                    [
-                        'provider' => 'google',
-                        'provider_subject' => $google['sub'],
-                    ],
-                    [
-                        'user_id' => $userId,
-                        'email' => $google['email'],
-                        'email_verified_at' => now(),
-                    ],
-                );
+                return [
+                    'merged' => $merged,
+                    'already_linked' => $existing !== null && (int) $existing->user_id === $userId,
+                ];
             });
         } catch (QueryException $exception) {
             if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
@@ -414,7 +423,16 @@ class AuthController
             ]);
         }
 
-        return response()->json(['data' => ['linked' => true]]);
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $user = User::query()->findOrFail($userId);
+        $membership = $this->membership($request);
+        $payload = $this->userPayload($user, $tenant, $membership);
+        $payload['linked'] = true;
+        $payload['merged'] = $linkResult['merged'];
+        $payload['already_linked'] = $linkResult['already_linked'];
+
+        return response()->json(['data' => $payload]);
     }
 
     public function telegramOidcConfig(Request $request): JsonResponse
@@ -436,8 +454,11 @@ class AuthController
         ])->header('Cache-Control', 'no-store');
     }
 
-    public function telegramOidc(Request $request, TelegramIdentityTokenVerifier $verifier): JsonResponse
-    {
+    public function telegramOidc(
+        Request $request,
+        TelegramIdentityTokenVerifier $verifier,
+        AccountMergeService $accountMergeService,
+    ): JsonResponse {
         $data = $request->validate([
             'id_token' => ['required', 'string', 'max:8192'],
         ]);
@@ -450,13 +471,12 @@ class AuthController
         }
 
         $telegram = $verifier->verify($data['id_token'], $nonce);
-        $this->allowTelegramIdentityLookup();
-        $identity = UserIdentity::query()
-            ->where('provider', 'telegram')
-            ->where('provider_subject', $telegram['sub'])
-            ->first();
+        $identity = $accountMergeService->resolveTelegramIdentity(
+            $telegram['telegram_id'],
+            $telegram['sub'],
+        );
 
-        if ($identity === null) {
+        if ($identity['user_id'] === null) {
             $request->session()->put('telegram_oidc_pending', $telegram);
 
             return response()->json([
@@ -468,11 +488,12 @@ class AuthController
         }
 
         $request->session()->forget('telegram_oidc_pending');
-        $membership = DB::transaction(function () use ($identity): Membership {
+        $userId = $identity['user_id'];
+        $membership = DB::transaction(function () use ($userId): Membership {
             return Membership::query()
-                ->where('user_id', $identity->user_id)
+                ->where('user_id', $userId)
                 ->first() ?? Membership::query()->create([
-                    'user_id' => $identity->user_id,
+                    'user_id' => $userId,
                     'role' => Role::Customer,
                 ]);
         });
@@ -485,13 +506,13 @@ class AuthController
         abort_if(
             $membership->role === Role::Staff
             && ! Staff::query()
-                ->where('user_id', $identity->user_id)
+                ->where('user_id', $userId)
                 ->where('is_active', true)
                 ->exists(),
             Response::HTTP_FORBIDDEN,
         );
 
-        $user = User::query()->findOrFail($identity->user_id);
+        $user = User::query()->findOrFail($userId);
         /** @var Tenant $tenant */
         $tenant = $request->attributes->get('tenant');
         Auth::guard('web')->login($user);
@@ -502,15 +523,17 @@ class AuthController
         ]);
     }
 
-    public function registerTelegramOidc(Request $request): JsonResponse
-    {
+    public function registerTelegramOidc(
+        Request $request,
+        AccountMergeService $accountMergeService,
+    ): JsonResponse {
         $telegram = $this->pendingTelegramOidcIdentity($request);
-        $this->allowTelegramIdentityLookup();
+        $identity = $accountMergeService->resolveTelegramIdentity(
+            $telegram['telegram_id'],
+            $telegram['sub'],
+        );
 
-        if (UserIdentity::query()
-            ->where('provider', 'telegram')
-            ->where('provider_subject', $telegram['sub'])
-            ->exists()) {
+        if ($identity['user_id'] !== null) {
             throw ValidationException::withMessages([
                 'telegram' => ['This Telegram account is already linked. Sign in with Telegram instead.'],
             ]);
@@ -542,7 +565,7 @@ class AuthController
                 UserIdentity::query()->create([
                     'user_id' => $userId,
                     'provider' => 'telegram',
-                    'provider_subject' => $telegram['sub'],
+                    'provider_subject' => $telegram['telegram_id'],
                     'email' => null,
                     'email_verified_at' => null,
                 ]);
@@ -571,8 +594,8 @@ class AuthController
     public function linkTelegramOidc(
         Request $request,
         TelegramIdentityTokenVerifier $verifier,
-    ): JsonResponse
-    {
+        AccountMergeService $accountMergeService,
+    ): JsonResponse {
         $membership = $this->membership($request);
         abort_unless(
             in_array($membership->role, [Role::Customer, Role::Staff], true),
@@ -606,30 +629,34 @@ class AuthController
         }
 
         $telegram = $this->pendingTelegramOidcIdentity($request);
-        $this->allowTelegramIdentityLookup();
-        $existing = UserIdentity::query()
-            ->where('provider', 'telegram')
-            ->where('provider_subject', $telegram['sub'])
-            ->first();
-
-        if ($existing !== null && (int) $existing->user_id !== (int) $request->user()->getAuthIdentifier()) {
-            throw ValidationException::withMessages([
-                'telegram' => ['This Telegram account is linked to another site account.'],
-            ]);
-        }
-
         try {
-            UserIdentity::query()->firstOrCreate(
-                [
-                    'provider' => 'telegram',
-                    'provider_subject' => $telegram['sub'],
-                ],
-                [
-                    'user_id' => $request->user()->getAuthIdentifier(),
-                    'email' => null,
-                    'email_verified_at' => null,
-                ],
-            );
+            $linkResult = DB::transaction(function () use ($telegram, $request, $accountMergeService): array {
+                $userId = (int) $request->user()->getAuthIdentifier();
+                $identity = $accountMergeService->resolveTelegramIdentity(
+                    $telegram['telegram_id'],
+                    $telegram['sub'],
+                    $userId,
+                );
+
+                if ($identity['user_id'] === null) {
+                    UserIdentity::query()->firstOrCreate(
+                        [
+                            'provider' => 'telegram',
+                            'provider_subject' => $telegram['telegram_id'],
+                        ],
+                        [
+                            'user_id' => $userId,
+                            'email' => null,
+                            'email_verified_at' => null,
+                        ],
+                    );
+                }
+
+                return [
+                    'merged' => $identity['merged'],
+                    'already_linked' => $identity['existing'] && ! $identity['merged'],
+                ];
+            });
         } catch (QueryException $exception) {
             if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
                 throw $exception;
@@ -642,7 +669,16 @@ class AuthController
 
         $request->session()->forget('telegram_oidc_pending');
 
-        return response()->json(['data' => ['linked' => true]]);
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $user = User::query()->findOrFail($request->user()->getAuthIdentifier());
+        $membership = $this->membership($request);
+        $payload = $this->userPayload($user, $tenant, $membership);
+        $payload['linked'] = true;
+        $payload['merged'] = $linkResult['merged'];
+        $payload['already_linked'] = $linkResult['already_linked'];
+
+        return response()->json(['data' => $payload]);
     }
 
     public function telegram(Request $request, TelegramWebAppAuthenticator $authenticator): JsonResponse
@@ -780,6 +816,7 @@ class AuthController
     public function linkTelegram(
         Request $request,
         TelegramWebAppAuthenticator $authenticator,
+        AccountMergeService $accountMergeService,
     ): JsonResponse {
         $membership = $this->membership($request);
         abort_unless(
@@ -800,30 +837,38 @@ class AuthController
             'bot' => ['required', Rule::in(['main', 'tenant'])],
         ]);
         $telegram = $authenticator->verify($data['init_data'], $data['bot']);
-        $this->allowTelegramIdentityLookup();
-        $existing = UserIdentity::query()
-            ->where('provider', 'telegram')
-            ->where('provider_subject', (string) $telegram->user['id'])
-            ->first();
-
-        if ($existing !== null && (int) $existing->user_id !== (int) $request->user()->getAuthIdentifier()) {
-            throw ValidationException::withMessages([
-                'telegram' => ['This Telegram account is linked to another site account.'],
-            ]);
-        }
-
         try {
-            UserIdentity::query()->firstOrCreate(
-                [
-                    'provider' => 'telegram',
-                    'provider_subject' => (string) $telegram->user['id'],
-                ],
-                [
-                    'user_id' => $request->user()->getAuthIdentifier(),
-                    'email' => null,
-                    'email_verified_at' => null,
-                ],
-            );
+            $linkResult = DB::transaction(function () use ($telegram, $request, $accountMergeService): array {
+                $this->allowTelegramIdentityLookup();
+                $userId = (int) $request->user()->getAuthIdentifier();
+                $subject = (string) $telegram->user['id'];
+                $existing = UserIdentity::query()
+                    ->where('provider', 'telegram')
+                    ->where('provider_subject', $subject)
+                    ->first();
+                $merged = $existing !== null && (int) $existing->user_id !== $userId
+                    ? $accountMergeService->mergeForIdentity($userId, 'telegram', $subject)
+                    : false;
+
+                if ($existing === null) {
+                    UserIdentity::query()->firstOrCreate(
+                        [
+                            'provider' => 'telegram',
+                            'provider_subject' => $subject,
+                        ],
+                        [
+                            'user_id' => $userId,
+                            'email' => null,
+                            'email_verified_at' => null,
+                        ],
+                    );
+                }
+
+                return [
+                    'merged' => $merged,
+                    'already_linked' => $existing !== null && (int) $existing->user_id === $userId,
+                ];
+            });
         } catch (QueryException $exception) {
             if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
                 throw $exception;
@@ -834,7 +879,16 @@ class AuthController
             ]);
         }
 
-        return response()->json(['data' => ['linked' => true]]);
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $user = User::query()->findOrFail($request->user()->getAuthIdentifier());
+        $membership = $this->membership($request);
+        $payload = $this->userPayload($user, $tenant, $membership);
+        $payload['linked'] = true;
+        $payload['merged'] = $linkResult['merged'];
+        $payload['already_linked'] = $linkResult['already_linked'];
+
+        return response()->json(['data' => $payload]);
     }
 
     public function logout(Request $request): Response
@@ -899,7 +953,7 @@ class AuthController
     }
 
     /**
-     * @return array{sub: string, name: ?string}
+     * @return array{sub: string, telegram_id: string, name: ?string}
      */
     private function pendingTelegramOidcIdentity(Request $request): array
     {
@@ -908,6 +962,7 @@ class AuthController
         if (
             ! is_array($telegram)
             || ! is_string($telegram['sub'] ?? null)
+            || ! is_string($telegram['telegram_id'] ?? null)
             || (isset($telegram['name']) && ! is_string($telegram['name']))
         ) {
             throw ValidationException::withMessages([
@@ -917,6 +972,7 @@ class AuthController
 
         return [
             'sub' => $telegram['sub'],
+            'telegram_id' => $telegram['telegram_id'],
             'name' => is_string($telegram['name'] ?? null) ? $telegram['name'] : null,
         ];
     }

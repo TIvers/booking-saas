@@ -128,8 +128,12 @@ async function finishTelegramLink(result: TelegramLoginResult): Promise<void> {
       return
     }
 
-    await auth.linkTelegramOidcWithToken(result.id_token)
-    telegramLinkMessage.value = 'Telegram привязан к аккаунту.'
+    const outcome = await auth.linkTelegramOidcWithToken(result.id_token)
+    telegramLinkMessage.value = outcome.merged
+      ? 'Аккаунты объединены. Telegram и остальные способы входа ведут в один профиль.'
+      : outcome.alreadyLinked
+        ? 'Telegram уже привязан. Отдельный аккаунт не найден.'
+        : 'Telegram привязан к аккаунту.'
     telegramLinkSettings.value = null
     afterAuthentication()
   } catch (error) {

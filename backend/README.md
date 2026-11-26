@@ -38,6 +38,13 @@ Unlinked Telegram users can sign in to an existing customer account and link it
 or create a customer account. Telegram identities are globally unique; an
 identity can receive a customer membership when it opens another organization.
 Telegram sign-in and linking are available only for customers and specialists.
+Telegram WebApp and browser OIDC use the same numeric Telegram user ID; legacy
+OIDC subject-only identities are normalized on the next verified OIDC login or link.
+When a verified provider is already linked to another account, linking it from
+the current account merges the accounts into the current one and transfers
+their memberships, bookings, identities, and Telegram notification links.
+Conflicting roles, logins, specialist profiles, notification connections, or
+different email addresses block the merge without changing either account.
 
 The main bot token is read from `TELEGRAM_MAIN_BOT_TOKEN`. An organization
 owner can connect one manually-created bot under `PUT /api/v1/manage/telegram-bot`;

@@ -85,7 +85,7 @@ function onPhoneInput(event: Event): void {
 }
 
 watch(
-  () => auth.user?.id,
+  () => auth.user,
   () => {
     name.value = auth.user?.name ?? ''
     phone.value = formatRussianPhone(auth.user?.phone ?? '')
@@ -132,8 +132,12 @@ async function connectTelegram(): Promise<void> {
   telegramError.value = ''
 
   try {
-    await auth.linkTelegram(telegramInitData.value, telegramBot.value)
-    telegramMessage.value = 'Telegram привязан к аккаунту.'
+    const outcome = await auth.linkTelegram(telegramInitData.value, telegramBot.value)
+    telegramMessage.value = outcome.merged
+      ? 'Аккаунты объединены. Telegram и остальные способы входа ведут в один профиль.'
+      : outcome.alreadyLinked
+        ? 'Telegram уже привязан. Отдельный аккаунт не найден.'
+        : 'Telegram привязан к аккаунту.'
   } catch (error) {
     telegramError.value = getApiProblem(error, 'Не удалось привязать Telegram.').message
   } finally {
@@ -164,8 +168,12 @@ async function connectGoogle(credential: string): Promise<void> {
 
   try {
     await ensureCsrfCookie()
-    await auth.linkGoogle(credential)
-    googleMessage.value = 'Google привязан к аккаунту.'
+    const outcome = await auth.linkGoogle(credential)
+    googleMessage.value = outcome.merged
+      ? 'Аккаунты объединены. Google и остальные способы входа ведут в один профиль.'
+      : outcome.alreadyLinked
+        ? 'Google уже привязан. Отдельный аккаунт не найден.'
+        : 'Google привязан к аккаунту.'
   } catch (error) {
     googleError.value = getApiProblem(error, 'Не удалось привязать Google.').message
   } finally {
@@ -319,7 +327,14 @@ onMounted(() => {
           <span>{{ auth.user?.telegram_linked ? 'Привязан' : 'Не привязан' }}</span>
         </div>
         <BaseButton
-          v-if="!auth.user?.telegram_linked && canLinkTelegram && telegramInitData"
+          v-if="auth.user?.telegram_linked && canLinkTelegram"
+          variant="secondary"
+          @click="startTelegramOidcLink"
+        >
+          Проверить и объединить Telegram
+        </BaseButton>
+        <BaseButton
+          v-else-if="canLinkTelegram && telegramInitData"
           variant="secondary"
           :loading="telegramBusy"
           @click="connectTelegram"
@@ -327,7 +342,7 @@ onMounted(() => {
           Привязать Telegram
         </BaseButton>
         <BaseButton
-          v-else-if="!auth.user?.telegram_linked && canLinkTelegram && !telegramInitData"
+          v-else-if="canLinkTelegram && !telegramInitData"
           variant="secondary"
           @click="startTelegramOidcLink"
         >
@@ -336,13 +351,11 @@ onMounted(() => {
       </div>
       <p
         v-if="
-          !auth.user?.telegram_linked
-            && canLinkTelegram
-            && !telegramInitData
+          canLinkTelegram && (auth.user?.telegram_linked || !telegramInitData)
         "
         class="help-text"
       >
-        Telegram откроется на общей странице подтверждения, затем вы вернётесь в профиль.
+        Подтвердите Telegram на общей странице. Если найден второй профиль, он будет объединён с текущим.
       </p>
       <p v-if="!auth.user?.telegram_linked && !canLinkTelegram" class="help-text">
         Привязка Telegram сейчас доступна для аккаунтов клиентов и специалистов.

@@ -123,10 +123,10 @@ it('allows an authenticated member to link a Google account from their profile',
         ->exists())->toBeTrue();
 });
 
-it('does not link a Google account already linked to another member', function () {
+it('merges a Google-linked account into the current account', function () {
     $tenant = TenantFixtures::createTenant('google-profile-conflict-tenant');
-    $customer = TenantFixtures::createMember($tenant, [], Role::Customer);
-    $otherCustomer = TenantFixtures::createMember($tenant, [], Role::Customer);
+    $customer = TenantFixtures::createMember($tenant, ['email' => null], Role::Customer);
+    $otherCustomer = TenantFixtures::createMember($tenant, ['email' => null], Role::Customer);
     TenantFixtures::activate($tenant);
     UserIdentity::query()->create([
         'user_id' => $otherCustomer->getKey(),
@@ -151,6 +151,15 @@ it('does not link a Google account already linked to another member', function (
             'X-Tenant' => (string) $tenant->getKey(),
         ])
         ->postJson('/api/v1/auth/google/link', ['credential' => 'signed-google-token'])
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors('google');
+        ->assertOk()
+        ->assertJsonPath('data.linked', true)
+        ->assertJsonPath('data.merged', true)
+        ->assertJsonPath('data.user.google_linked', true);
+
+    TenantFixtures::activate($tenant);
+    expect(User::query()->whereKey($otherCustomer->getKey())->exists())->toBeFalse()
+        ->and(UserIdentity::query()
+            ->where('provider', 'google')
+            ->where('provider_subject', 'google-already-linked')
+            ->value('user_id'))->toBe($customer->getKey());
 });

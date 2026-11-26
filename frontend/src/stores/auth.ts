@@ -23,6 +23,17 @@ interface ApiResponse<T> {
   data: T
 }
 
+interface AccountLinkResponse extends AuthPayload {
+  linked: boolean
+  merged?: boolean
+  already_linked?: boolean
+}
+
+interface AccountLinkOutcome {
+  merged: boolean
+  alreadyLinked: boolean
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null)
   const role = ref<TenantRole | null>(null)
@@ -168,24 +179,51 @@ export const useAuthStore = defineStore('auth', () => {
     initialized.value = true
   }
 
-  async function linkTelegram(initData: string, bot: 'main' | 'tenant'): Promise<void> {
-    await api.post('/auth/telegram/link', { init_data: initData, bot })
-    if (user.value) user.value.telegram_linked = true
+  async function linkTelegram(
+    initData: string,
+    bot: 'main' | 'tenant',
+  ): Promise<AccountLinkOutcome> {
+    const response = await api.post<ApiResponse<AccountLinkResponse>>('/auth/telegram/link', {
+      init_data: initData,
+      bot,
+    })
+    setAuth(response.data.data)
+    return {
+      merged: response.data.data.merged === true,
+      alreadyLinked: response.data.data.already_linked === true,
+    }
   }
 
-  async function linkTelegramOidc(): Promise<void> {
-    await api.post('/auth/telegram/oidc/link')
-    if (user.value) user.value.telegram_linked = true
+  async function linkTelegramOidc(): Promise<AccountLinkOutcome> {
+    const response = await api.post<ApiResponse<AccountLinkResponse>>('/auth/telegram/oidc/link')
+    setAuth(response.data.data)
+    return {
+      merged: response.data.data.merged === true,
+      alreadyLinked: response.data.data.already_linked === true,
+    }
   }
 
-  async function linkTelegramOidcWithToken(idToken: string): Promise<void> {
-    await api.post('/auth/telegram/oidc/link', { id_token: idToken })
-    if (user.value) user.value.telegram_linked = true
+  async function linkTelegramOidcWithToken(idToken: string): Promise<AccountLinkOutcome> {
+    const response = await api.post<ApiResponse<AccountLinkResponse>>(
+      '/auth/telegram/oidc/link',
+      { id_token: idToken },
+    )
+    setAuth(response.data.data)
+    return {
+      merged: response.data.data.merged === true,
+      alreadyLinked: response.data.data.already_linked === true,
+    }
   }
 
-  async function linkGoogle(credential: string): Promise<void> {
-    await api.post('/auth/google/link', { credential })
-    if (user.value) user.value.google_linked = true
+  async function linkGoogle(credential: string): Promise<AccountLinkOutcome> {
+    const response = await api.post<ApiResponse<AccountLinkResponse>>('/auth/google/link', {
+      credential,
+    })
+    setAuth(response.data.data)
+    return {
+      merged: response.data.data.merged === true,
+      alreadyLinked: response.data.data.already_linked === true,
+    }
   }
 
   async function updateEmail(email: string): Promise<void> {

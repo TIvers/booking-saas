@@ -64,6 +64,7 @@ it('verifies a signed Telegram identity token and its nonce', function () {
         'iss' => 'https://oauth.telegram.org',
         'aud' => '123456789',
         'sub' => '987654321',
+        'id' => 135791113,
         'nonce' => 'expected-nonce',
         'name' => 'Telegram User',
         'iat' => time(),
@@ -73,6 +74,7 @@ it('verifies a signed Telegram identity token and its nonce', function () {
     expect(app(TelegramIdentityTokenVerifier::class)->verify($token, 'expected-nonce'))
         ->toBe([
             'sub' => '987654321',
+            'telegram_id' => '135791113',
             'name' => 'Telegram User',
         ]);
 });
@@ -94,7 +96,23 @@ it('rejects Telegram identity tokens with a mismatched nonce', function () {
         'iss' => 'https://oauth.telegram.org',
         'aud' => '123456789',
         'sub' => '987654321',
+        'id' => 135791113,
         'nonce' => 'different-nonce',
+        'iat' => time(),
+        'exp' => time() + 300,
+    ]);
+
+    expect(fn () => app(TelegramIdentityTokenVerifier::class)->verify($token, 'expected-nonce'))
+        ->toThrow(ValidationException::class);
+});
+
+it('requires the Telegram profile ID needed to match WebApp identities', function () {
+    [$privateKey] = telegramOidcTestKeyPair();
+    $token = telegramOidcTestToken($privateKey, [
+        'iss' => 'https://oauth.telegram.org',
+        'aud' => '123456789',
+        'sub' => '987654321',
+        'nonce' => 'expected-nonce',
         'iat' => time(),
         'exp' => time() + 300,
     ]);

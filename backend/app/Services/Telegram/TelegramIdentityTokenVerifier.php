@@ -12,7 +12,7 @@ use RuntimeException;
 class TelegramIdentityTokenVerifier
 {
     /**
-     * @return array{sub: string, name: ?string}
+     * @return array{sub: string, telegram_id: string, name: ?string}
      */
     public function verify(string $token, string $expectedNonce): array
     {
@@ -27,11 +27,13 @@ class TelegramIdentityTokenVerifier
         $claims = $this->decodeJson($encodedClaims);
         $signature = $this->decodeBase64Url($encodedSignature);
         $clientId = config('services.telegram.login_client_id');
+        $telegramId = $claims === null ? null : $this->telegramId($claims);
 
         if (
             $header === null
             || $claims === null
             || $signature === null
+            || $telegramId === null
             || ($header['alg'] ?? null) !== 'RS256'
             || ! is_string($header['kid'] ?? null)
             || ! is_string($clientId)
@@ -57,6 +59,7 @@ class TelegramIdentityTokenVerifier
 
         return [
             'sub' => $claims['sub'],
+            'telegram_id' => $telegramId,
             'name' => is_string($name) ? mb_substr(trim($name), 0, 255) : null,
         ];
     }
@@ -77,6 +80,7 @@ class TelegramIdentityTokenVerifier
         return ($claims['iss'] ?? null) === 'https://oauth.telegram.org'
             && is_string($claims['sub'] ?? null)
             && preg_match('/^[0-9]{1,191}$/D', $claims['sub']) === 1
+            && $this->telegramId($claims) !== null
             && $audienceMatches
             && $authorizedPartyMatches
             && is_string($claims['nonce'] ?? null)
@@ -86,6 +90,22 @@ class TelegramIdentityTokenVerifier
             && is_numeric($claims['iat'] ?? null)
             && (int) $claims['iat'] <= time() + 60
             && (! isset($claims['name']) || is_string($claims['name']));
+    }
+
+    /**
+     * @param  array<string, mixed>  $claims
+     */
+    private function telegramId(array $claims): ?string
+    {
+        $id = $claims['id'] ?? null;
+
+        if (is_int($id) && $id > 0) {
+            return (string) $id;
+        }
+
+        return is_string($id) && preg_match('/^[1-9][0-9]{0,19}$/D', $id) === 1
+            ? $id
+            : null;
     }
 
     private function key(string $keyId): string
