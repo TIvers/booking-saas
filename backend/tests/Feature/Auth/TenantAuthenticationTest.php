@@ -124,7 +124,10 @@ it('verifies a desktop registration using the emailed link', function () {
     parse_str((string) parse_url($message->verificationUrl, PHP_URL_QUERY), $query);
 
     $this->withHeaders($headers)
-        ->postJson('/api/v1/auth/email/verification/link', $query)
+        ->postJson('/api/v1/auth/email/verification/link', [
+            'challenge_id' => $query['challenge'] ?? null,
+            'token' => $query['token'] ?? null,
+        ])
         ->assertOk()
         ->assertJsonPath('data.user.email_verified', true)
         ->assertJsonPath('data.user.username', 'link-customer');

@@ -407,8 +407,9 @@ class AuthController
 
     public function setPassword(Request $request): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
+        /** @var User $authenticatedUser */
+        $authenticatedUser = $request->user();
+        $user = User::query()->findOrFail($authenticatedUser->getAuthIdentifier());
         $data = $request->validate([
             'password' => ['required', 'string', 'min:12', 'confirmed'],
         ]);
@@ -422,6 +423,7 @@ class AuthController
         $user->password = $data['password'];
         $user->password_set_at = now();
         $user->save();
+        Auth::guard('web')->setUser($user);
 
         return response()->json(['data' => ['has_password' => true]]);
     }
