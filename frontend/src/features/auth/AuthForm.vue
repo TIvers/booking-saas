@@ -86,7 +86,7 @@ async function submit(): Promise<void> {
     if (mode.value === 'register') {
       await auth.register({
         name: name.value,
-        username: username.value,
+        username: username.value || undefined,
         email: email.value || undefined,
         password: password.value,
         password_confirmation: passwordConfirmation.value,
@@ -505,10 +505,10 @@ onMounted(() => {
       </label>
 
       <label v-if="mode === 'register'" class="field">
-        <span>Логин</span>
+        <span>Логин (необязательно, если указан email)</span>
         <input
           v-model.trim="username"
-          required
+          :required="!email"
           minlength="3"
           maxlength="32"
           pattern="[a-z0-9][a-z0-9_.-]{2,31}"
@@ -519,18 +519,23 @@ onMounted(() => {
       </label>
 
       <label v-if="mode === 'register'" class="field">
-        <span>Email для будущего подтверждения (необязательно)</span>
+        <span>Email (необязательно, если указан логин)</span>
         <input
           v-model.trim="email"
           type="email"
+          :required="!username"
           autocomplete="email"
           maxlength="255"
         />
         <small v-if="fieldErrors.email">{{ fieldErrors.email[0] }}</small>
       </label>
 
+      <p v-if="mode === 'register'" class="form-message form-message--info">
+        Укажите email или логин — для входа позже подойдёт любой из них.
+      </p>
+
       <label v-else class="field">
-        <span>Логин</span>
+        <span>Логин или email</span>
         <input
           v-model.trim="login"
           required
@@ -538,7 +543,7 @@ onMounted(() => {
           autocapitalize="off"
           autocomplete="username"
         />
-        <small>Для старых аккаунтов временно подойдёт email.</small>
+        <small>Введите логин или email, указанный при регистрации.</small>
       </label>
 
       <label class="field">

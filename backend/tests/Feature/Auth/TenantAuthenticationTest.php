@@ -28,6 +28,47 @@ it('registers a customer inside the selected tenant', function () {
         ->assertJsonPath('data.role', 'customer');
 });
 
+it('allows a customer to register with email and no username', function () {
+    $tenant = TenantFixtures::createTenant('email-only-registration-tenant');
+    $headers = [
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ];
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/register', [
+            'name' => 'Email Customer',
+            'email' => 'email-customer@example.test',
+            'password' => 'correct-horse-battery',
+            'password_confirmation' => 'correct-horse-battery',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.user.username', null)
+        ->assertJsonPath('data.user.email', 'email-customer@example.test');
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/login', [
+            'login' => 'email-customer@example.test',
+            'password' => 'correct-horse-battery',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.user.email', 'email-customer@example.test');
+});
+
+it('requires at least one password sign-in identifier at registration', function () {
+    $tenant = TenantFixtures::createTenant('identifier-required-tenant');
+
+    $this->withHeaders([
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ])->postJson('/api/v1/auth/register', [
+        'name' => 'Unreachable Customer',
+        'password' => 'correct-horse-battery',
+        'password_confirmation' => 'correct-horse-battery',
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors(['username', 'email']);
+});
+
 it('authenticates a tenant member and returns the selected tenant context', function () {
     $tenant = TenantFixtures::createTenant('login-tenant');
     $user = TenantFixtures::createMember($tenant, [
@@ -50,7 +91,7 @@ it('authenticates a tenant member and returns the selected tenant context', func
         ->assertJsonPath('data.role', 'owner');
 });
 
-it('allows a legacy customer to use email until they set a tenant username', function () {
+it('allows a tenant member to sign in with either username or email', function () {
     $tenant = TenantFixtures::createTenant('legacy-login-tenant');
     $customer = TenantFixtures::createMember($tenant, [
         'email' => 'legacy-customer@example.test',
@@ -77,10 +118,19 @@ it('allows a legacy customer to use email until they set a tenant username', fun
 
     $this->withHeaders($headers)
         ->postJson('/api/v1/auth/login', [
-            'login' => 'legacy-customer@example.test',
+            'login' => 'LEGACY-CUSTOMER@EXAMPLE.TEST',
             'password' => 'correct-horse-battery',
         ])
-        ->assertUnprocessable();
+        ->assertOk()
+        ->assertJsonPath('data.user.id', $customer->getKey());
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/login', [
+            'login' => 'legacy-client',
+            'password' => 'correct-horse-battery',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.user.id', $customer->getKey());
 });
 
 it('returns the authenticated member in the selected tenant', function () {

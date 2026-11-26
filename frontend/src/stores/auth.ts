@@ -34,7 +34,9 @@ export const useAuthStore = defineStore('auth', () => {
     () => (role.value === 'customer' || role.value === 'staff')
       && user.value !== null
       && user.value.username === null
-      && !user.value.telegram_linked,
+      && user.value.email === null
+      && !user.value.telegram_linked
+      && !user.value.google_linked,
   )
 
   function setAuth(payload: AuthPayload): void {
@@ -96,7 +98,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(credentials: {
     name: string
-    username: string
+    username?: string
     email?: string
     password: string
     password_confirmation: string

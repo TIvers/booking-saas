@@ -51,13 +51,14 @@ class AuthController
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'username' => [
-                'required',
+                'nullable',
+                'required_without:email',
                 'string',
                 'max:32',
                 'regex:/^[a-z0-9][a-z0-9_.-]{2,31}$/',
                 Rule::unique('memberships', 'username')->where('tenant_id', $tenantId),
             ],
-            'email' => ['nullable', 'email', 'max:255'],
+            'email' => ['nullable', 'required_without:username', 'email', 'max:255'],
             'password' => ['required', 'string', 'min:12', 'confirmed'],
         ]);
 
@@ -84,7 +85,7 @@ class AuthController
                 Membership::create([
                     'user_id' => $userId,
                     'role' => Role::Customer,
-                    'username' => $validated['username'],
+                    'username' => $validated['username'] ?? null,
                 ]);
 
                 return User::query()->findOrFail($userId);
@@ -126,20 +127,24 @@ class AuthController
             'password' => ['required', 'string'],
         ]);
 
-        $membership = Membership::query()
-            ->with('user')
-            ->where('username', $credentials['login'])
-            ->first();
+        $login = trim($credentials['login']);
+        $membership = null;
 
-        if ($membership === null && filter_var($credentials['login'], FILTER_VALIDATE_EMAIL)) {
+        if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
             $membership = Membership::query()
                 ->with('user')
-                ->whereHas('user', fn ($query) => $query->where('email', $credentials['login']))
+                ->whereHas(
+                    'user',
+                    fn ($query) => $query->whereRaw('LOWER(email) = ?', [mb_strtolower($login)])
+                )
                 ->first();
+        }
 
-            if ($membership?->username !== null) {
-                $membership = null;
-            }
+        if ($membership === null) {
+            $membership = Membership::query()
+                ->with('user')
+                ->where('username', $login)
+                ->first();
         }
 
         if (
