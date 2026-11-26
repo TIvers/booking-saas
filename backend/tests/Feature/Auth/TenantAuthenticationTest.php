@@ -156,6 +156,44 @@ it('authenticates a tenant member and returns the selected tenant context', func
         ->assertJsonPath('data.role', 'owner');
 });
 
+it('sends an email verification challenge before allowing an unverified organization account to sign in', function () {
+    Mail::fake();
+    $tenant = TenantFixtures::createTenant('unverified-organization-login-tenant');
+    $owner = TenantFixtures::createMember($tenant, [
+        'email' => 'unverified-owner@example.test',
+        'email_verified_at' => null,
+        'email_verification_pending' => false,
+        'password' => 'correct-horse-battery',
+    ]);
+    $headers = [
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ];
+
+    $response = $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/organization/login', [
+            'login' => 'unverified-owner@example.test',
+            'password' => 'correct-horse-battery',
+            'verification_channel' => 'code',
+        ])
+        ->assertAccepted()
+        ->assertJsonPath('data.status', 'verification_required')
+        ->assertJsonPath('data.verification.email', 'unverified-owner@example.test');
+
+    $message = Mail::sent(VerifyAccountEmail::class)->first();
+    expect($message)->not->toBeNull();
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/email/verification/code', [
+            'challenge_id' => $response->json('data.verification.challenge_id'),
+            'code' => $message->code,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.user.id', $owner->getKey())
+        ->assertJsonPath('data.user.email_verified', true)
+        ->assertJsonPath('data.role', 'owner');
+});
+
 it('allows a tenant member to sign in with either username or email', function () {
     $tenant = TenantFixtures::createTenant('legacy-login-tenant');
     $customer = TenantFixtures::createMember($tenant, [

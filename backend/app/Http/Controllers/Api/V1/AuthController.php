@@ -252,7 +252,10 @@ class AuthController
         }
 
         $user = $membership->user;
-        if ($user->email_verification_pending) {
+        if (
+            $user->email_verification_pending
+            || ($user->email !== null && $user->email_verified_at === null)
+        ) {
             /** @var Tenant $tenant */
             $tenant = $request->attributes->get('tenant');
             $verification = $emailVerification->issue(
