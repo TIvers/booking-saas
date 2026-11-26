@@ -190,6 +190,16 @@ router.beforeEach(async (to) => {
   }
 
   await auth.loadCurrentUser()
+  if (to.name === 'login' && to.query.link === 'telegram' && !auth.isAuthenticated) {
+    return {
+      name: 'login',
+      query: {
+        tenant: tenantSlug,
+        ...(typeof to.query.redirect === 'string' ? { redirect: to.query.redirect } : {}),
+      },
+    }
+  }
+
   if (
     !auth.isAuthenticated
     && (requiresManager || requiresSpecialist || requiresCustomer || requiresAuthenticated || isUsernameSetup)

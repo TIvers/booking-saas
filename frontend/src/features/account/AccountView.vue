@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { getApiProblem } from '@/api/client'
+import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
+import type { ApiResponse } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const name = ref(auth.user?.name ?? '')
 const phone = ref(formatRussianPhone(auth.user?.phone ?? ''))
 const email = ref(auth.user?.email ?? '')
@@ -15,6 +19,12 @@ const profileMessage = ref('')
 const profileError = ref('')
 const emailMessage = ref('')
 const emailError = ref('')
+const googleButton = ref<HTMLDivElement | null>(null)
+const googleClientId = ref('')
+const googleBusy = ref(false)
+const googleConfigLoaded = ref(false)
+const googleError = ref('')
+const googleMessage = ref('')
 const telegramMessage = ref('')
 const telegramError = ref('')
 const telegramInitData = computed(() => window.Telegram?.WebApp?.initData ?? '')
@@ -130,6 +140,90 @@ async function connectTelegram(): Promise<void> {
     telegramBusy.value = false
   }
 }
+
+function startTelegramOidcLink(): void {
+  const tenantSlug = route.params.tenantSlug
+  if (typeof tenantSlug !== 'string') return
+
+  void router.push({
+    name: 'login',
+    query: {
+      tenant: tenantSlug,
+      link: 'telegram',
+      redirect: route.fullPath,
+    },
+  })
+}
+
+async function connectGoogle(credential: string): Promise<void> {
+  if (googleBusy.value) return
+
+  googleBusy.value = true
+  googleMessage.value = ''
+  googleError.value = ''
+
+  try {
+    await ensureCsrfCookie()
+    await auth.linkGoogle(credential)
+    googleMessage.value = 'Google привязан к аккаунту.'
+  } catch (error) {
+    googleError.value = getApiProblem(error, 'Не удалось привязать Google.').message
+  } finally {
+    googleBusy.value = false
+  }
+}
+
+async function loadGoogleButton(): Promise<void> {
+  try {
+    const response = await api.get<ApiResponse<{ enabled: boolean; client_id: string | null }>>(
+      '/auth/google/config',
+    )
+    googleConfigLoaded.value = true
+
+    if (!response.data.data.enabled || !response.data.data.client_id) return
+
+    googleClientId.value = response.data.data.client_id
+    await nextTick()
+    await new Promise<void>((resolve, reject) => {
+      if (window.google?.accounts.id) {
+        resolve()
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.async = true
+      script.defer = true
+      script.onload = () => resolve()
+      script.onerror = () => reject(new Error('Не удалось загрузить Google Identity Services.'))
+      document.head.appendChild(script)
+    })
+
+    if (!googleButton.value || !window.google?.accounts.id) {
+      throw new Error('Привязка Google сейчас недоступна.')
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: googleClientId.value,
+      callback: (response) => {
+        void connectGoogle(response.credential)
+      },
+    })
+    window.google.accounts.id.renderButton(googleButton.value, {
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      width: Math.min(googleButton.value.clientWidth || 320, 400),
+    })
+  } catch (error) {
+    googleConfigLoaded.value = true
+    googleError.value = getApiProblem(error, 'Не удалось подготовить привязку Google.').message
+  }
+}
+
+onMounted(() => {
+  if (!auth.user?.google_linked) void loadGoogleButton()
+})
 </script>
 
 <template>
@@ -201,15 +295,24 @@ async function connectTelegram(): Promise<void> {
         </div>
       </div>
       <p class="help-text">
-        Google привязывается автоматически при входе с подтверждённым email, совпадающим с аккаунтом.
-        Также можно подключить Telegram для уведомлений.
+        Привязанные сервисы можно использовать для входа в аккаунт.
       </p>
       <div class="connection-row">
         <div>
           <strong>Google</strong>
           <span>{{ auth.user?.google_linked ? 'Привязан' : 'Не привязан' }}</span>
         </div>
+        <div
+          v-if="!auth.user?.google_linked"
+          ref="googleButton"
+          class="google-button"
+        />
       </div>
+      <p v-if="!auth.user?.google_linked && googleConfigLoaded && !googleClientId && !googleError" class="help-text">
+        Вход через Google пока не настроен.
+      </p>
+      <p v-if="googleError" class="message message--error" role="alert">{{ googleError }}</p>
+      <p v-if="googleMessage" class="message message--success" role="status">{{ googleMessage }}</p>
       <div class="connection-row">
         <div>
           <strong>Telegram</strong>
@@ -223,12 +326,23 @@ async function connectTelegram(): Promise<void> {
         >
           Привязать Telegram
         </BaseButton>
+        <BaseButton
+          v-else-if="!auth.user?.telegram_linked && canLinkTelegram && !telegramInitData"
+          variant="secondary"
+          @click="startTelegramOidcLink"
+        >
+          Привязать Telegram
+        </BaseButton>
       </div>
       <p
-        v-if="!auth.user?.telegram_linked && canLinkTelegram && !telegramInitData"
+        v-if="
+          !auth.user?.telegram_linked
+            && canLinkTelegram
+            && !telegramInitData
+        "
         class="help-text"
       >
-        Чтобы привязать Telegram, откройте профиль внутри Telegram.
+        Telegram откроется на общей странице подтверждения, затем вы вернётесь в профиль.
       </p>
       <p v-if="!auth.user?.telegram_linked && !canLinkTelegram" class="help-text">
         Привязка Telegram сейчас доступна для аккаунтов клиентов и специалистов.
@@ -344,6 +458,11 @@ async function connectTelegram(): Promise<void> {
 .connection-row span {
   color: #758078;
   font-size: 0.8rem;
+}
+
+.google-button {
+  min-height: 2.5rem;
+  min-width: 13rem;
 }
 
 .message {

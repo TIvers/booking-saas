@@ -24,6 +24,8 @@ Route::prefix('v1')
         Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:6,1');
         Route::get('/auth/google/config', [AuthController::class, 'googleConfig']);
         Route::post('/auth/google', [AuthController::class, 'google'])->middleware('throttle:10,1');
+        Route::post('/auth/google/link', [AuthController::class, 'linkGoogle'])
+            ->middleware(['auth:sanctum', 'tenant.member', 'throttle:10,1']);
         Route::post('/auth/telegram/oidc/config', [AuthController::class, 'telegramOidcConfig'])
             ->middleware('throttle:10,1');
         Route::post('/auth/telegram/oidc', [AuthController::class, 'telegramOidc'])

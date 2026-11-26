@@ -5,34 +5,6 @@ import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
 import type { ApiResponse } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 
-interface GoogleCredentialResponse {
-  credential: string
-}
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (options: {
-            client_id: string
-            callback: (response: GoogleCredentialResponse) => void
-          }) => void
-          renderButton: (
-            element: HTMLElement,
-            options: {
-              theme: 'outline'
-              size: 'large'
-              text: 'continue_with'
-              width: number
-            },
-          ) => void
-        }
-      }
-    }
-  }
-}
-
 const props = defineProps<{
   initialMode?: 'login' | 'register'
 }>()

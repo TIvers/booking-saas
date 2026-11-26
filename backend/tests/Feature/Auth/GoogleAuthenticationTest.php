@@ -89,3 +89,68 @@ it('links a Google account to an existing organization member by verified email'
         ->where('user_id', $owner->getKey())
         ->exists())->toBeTrue();
 });
+
+it('allows an authenticated member to link a Google account from their profile', function () {
+    $tenant = TenantFixtures::createTenant('google-profile-link-tenant');
+    $customer = TenantFixtures::createMember($tenant, [], Role::Customer);
+    config()->set('services.google.client_id', 'google-client-id');
+
+    $verifier = Mockery::mock(GoogleIdentityVerifier::class);
+    $verifier->shouldReceive('verify')
+        ->once()
+        ->with('signed-google-token')
+        ->andReturn([
+            'sub' => 'google-profile-subject',
+            'email' => 'different-google@example.test',
+            'name' => 'Google Customer',
+        ]);
+    app()->instance(GoogleIdentityVerifier::class, $verifier);
+
+    $this->actingAs($customer)
+        ->withHeaders([
+            'Origin' => 'http://localhost',
+            'X-Tenant' => (string) $tenant->getKey(),
+        ])
+        ->postJson('/api/v1/auth/google/link', ['credential' => 'signed-google-token'])
+        ->assertOk()
+        ->assertJsonPath('data.linked', true);
+
+    TenantFixtures::activate($tenant);
+    expect(UserIdentity::query()
+        ->where('provider', 'google')
+        ->where('provider_subject', 'google-profile-subject')
+        ->where('user_id', $customer->getKey())
+        ->exists())->toBeTrue();
+});
+
+it('does not link a Google account already linked to another member', function () {
+    $tenant = TenantFixtures::createTenant('google-profile-conflict-tenant');
+    $customer = TenantFixtures::createMember($tenant, [], Role::Customer);
+    $otherCustomer = TenantFixtures::createMember($tenant, [], Role::Customer);
+    TenantFixtures::activate($tenant);
+    UserIdentity::query()->create([
+        'user_id' => $otherCustomer->getKey(),
+        'provider' => 'google',
+        'provider_subject' => 'google-already-linked',
+    ]);
+
+    $verifier = Mockery::mock(GoogleIdentityVerifier::class);
+    $verifier->shouldReceive('verify')
+        ->once()
+        ->with('signed-google-token')
+        ->andReturn([
+            'sub' => 'google-already-linked',
+            'email' => 'customer@example.test',
+            'name' => 'Google Customer',
+        ]);
+    app()->instance(GoogleIdentityVerifier::class, $verifier);
+
+    $this->actingAs($customer)
+        ->withHeaders([
+            'Origin' => 'http://localhost',
+            'X-Tenant' => (string) $tenant->getKey(),
+        ])
+        ->postJson('/api/v1/auth/google/link', ['credential' => 'signed-google-token'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('google');
+});

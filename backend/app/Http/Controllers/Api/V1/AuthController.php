@@ -370,6 +370,53 @@ class AuthController
         ]);
     }
 
+    public function linkGoogle(Request $request, GoogleIdentityVerifier $verifier): JsonResponse
+    {
+        $data = $request->validate([
+            'credential' => ['required', 'string', 'max:8192'],
+        ]);
+        $google = $verifier->verify($data['credential']);
+        $userId = (int) $request->user()->getAuthIdentifier();
+
+        try {
+            DB::transaction(function () use ($google, $userId): void {
+                $this->allowGoogleIdentityLookup();
+                $existing = UserIdentity::query()
+                    ->where('provider', 'google')
+                    ->where('provider_subject', $google['sub'])
+                    ->first();
+
+                if ($existing !== null && (int) $existing->user_id !== $userId) {
+                    throw ValidationException::withMessages([
+                        'google' => ['This Google account is linked to another site account.'],
+                    ]);
+                }
+
+                UserIdentity::query()->firstOrCreate(
+                    [
+                        'provider' => 'google',
+                        'provider_subject' => $google['sub'],
+                    ],
+                    [
+                        'user_id' => $userId,
+                        'email' => $google['email'],
+                        'email_verified_at' => now(),
+                    ],
+                );
+            });
+        } catch (QueryException $exception) {
+            if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
+                throw $exception;
+            }
+
+            throw ValidationException::withMessages([
+                'google' => ['This Google account is linked to another site account.'],
+            ]);
+        }
+
+        return response()->json(['data' => ['linked' => true]]);
+    }
+
     public function telegramOidcConfig(Request $request): JsonResponse
     {
         $clientId = config('services.telegram.login_client_id');
@@ -521,7 +568,10 @@ class AuthController
         ], 201);
     }
 
-    public function linkTelegramOidc(Request $request): JsonResponse
+    public function linkTelegramOidc(
+        Request $request,
+        TelegramIdentityTokenVerifier $verifier,
+    ): JsonResponse
     {
         $membership = $this->membership($request);
         abort_unless(
@@ -536,6 +586,24 @@ class AuthController
                 ->exists(),
             Response::HTTP_FORBIDDEN,
         );
+
+        if ($request->exists('id_token')) {
+            $data = $request->validate([
+                'id_token' => ['required', 'string', 'max:8192'],
+            ]);
+            $nonce = $request->session()->pull('telegram_oidc_nonce');
+
+            if (! is_string($nonce) || $nonce === '') {
+                throw ValidationException::withMessages([
+                    'id_token' => ['The Telegram sign-in session expired. Try again.'],
+                ]);
+            }
+
+            $request->session()->put(
+                'telegram_oidc_pending',
+                $verifier->verify($data['id_token'], $nonce),
+            );
+        }
 
         $telegram = $this->pendingTelegramOidcIdentity($request);
         $this->allowTelegramIdentityLookup();
@@ -823,6 +891,11 @@ class AuthController
     private function allowTelegramIdentityLookup(): void
     {
         DB::select("SELECT set_config('app.telegram_identity_lookup', 'on', true)");
+    }
+
+    private function allowGoogleIdentityLookup(): void
+    {
+        DB::select("SELECT set_config('app.google_identity_lookup', 'on', true)");
     }
 
     /**

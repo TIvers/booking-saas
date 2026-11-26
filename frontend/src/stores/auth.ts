@@ -178,6 +178,16 @@ export const useAuthStore = defineStore('auth', () => {
     if (user.value) user.value.telegram_linked = true
   }
 
+  async function linkTelegramOidcWithToken(idToken: string): Promise<void> {
+    await api.post('/auth/telegram/oidc/link', { id_token: idToken })
+    if (user.value) user.value.telegram_linked = true
+  }
+
+  async function linkGoogle(credential: string): Promise<void> {
+    await api.post('/auth/google/link', { credential })
+    if (user.value) user.value.google_linked = true
+  }
+
   async function updateEmail(email: string): Promise<void> {
     const response = await api.put<ApiResponse<{ email: string }>>('/auth/email', { email })
     if (user.value) user.value.email = response.data.data.email
@@ -225,6 +235,8 @@ export const useAuthStore = defineStore('auth', () => {
     registerWithTelegramOidc,
     linkTelegram,
     linkTelegramOidc,
+    linkTelegramOidcWithToken,
+    linkGoogle,
     updateEmail,
     updateProfile,
     updateUsername,

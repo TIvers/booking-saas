@@ -92,3 +92,70 @@ it('signs in a linked customer through Telegram OIDC', function () {
         ->assertJsonPath('data.user.name', 'Existing Telegram Customer')
         ->assertJsonPath('data.role', 'customer');
 });
+
+it('allows an authenticated member to link Telegram from their profile', function () {
+    $tenant = TenantFixtures::createTenant('telegram-oidc-profile-link');
+    $customer = TenantFixtures::createMember($tenant, [], Role::Customer);
+    $headers = [
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ];
+    $config = $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/telegram/oidc/config')
+        ->assertOk();
+    $nonce = $config->json('data.nonce');
+
+    $verifier = Mockery::mock(TelegramIdentityTokenVerifier::class);
+    $verifier->shouldReceive('verify')
+        ->once()
+        ->with('signed-telegram-token', $nonce)
+        ->andReturn(['sub' => '555000111', 'name' => 'Profile Telegram']);
+    app()->instance(TelegramIdentityTokenVerifier::class, $verifier);
+
+    $this->actingAs($customer)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/auth/telegram/oidc/link', ['id_token' => 'signed-telegram-token'])
+        ->assertOk()
+        ->assertJsonPath('data.linked', true);
+
+    TenantFixtures::activate($tenant);
+    expect(UserIdentity::query()
+        ->where('provider', 'telegram')
+        ->where('provider_subject', '555000111')
+        ->where('user_id', $customer->getKey())
+        ->exists())->toBeTrue();
+});
+
+it('does not link a Telegram account already linked to another member', function () {
+    $tenant = TenantFixtures::createTenant('telegram-oidc-profile-conflict');
+    $customer = TenantFixtures::createMember($tenant, [], Role::Customer);
+    $otherCustomer = TenantFixtures::createMember($tenant, [], Role::Customer);
+    TenantFixtures::activate($tenant);
+    UserIdentity::query()->create([
+        'user_id' => $otherCustomer->getKey(),
+        'provider' => 'telegram',
+        'provider_subject' => '555000222',
+    ]);
+
+    $headers = [
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ];
+    $config = $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/telegram/oidc/config')
+        ->assertOk();
+    $nonce = $config->json('data.nonce');
+
+    $verifier = Mockery::mock(TelegramIdentityTokenVerifier::class);
+    $verifier->shouldReceive('verify')
+        ->once()
+        ->with('signed-telegram-token', $nonce)
+        ->andReturn(['sub' => '555000222', 'name' => 'Other Telegram']);
+    app()->instance(TelegramIdentityTokenVerifier::class, $verifier);
+
+    $this->actingAs($customer)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/auth/telegram/oidc/link', ['id_token' => 'signed-telegram-token'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('telegram');
+});
