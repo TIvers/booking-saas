@@ -295,8 +295,9 @@ class AuthController
 
     public function me(Request $request): JsonResponse
     {
-        /** @var User $user */
-        $user = $request->user();
+        /** @var User $authenticatedUser */
+        $authenticatedUser = $request->user();
+        $user = User::query()->findOrFail($authenticatedUser->getAuthIdentifier());
 
         /** @var Tenant $tenant */
         $tenant = $request->attributes->get('tenant');
