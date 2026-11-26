@@ -1,10 +1,19 @@
 const TELEGRAM_API_HOST = "api.telegram.org";
+const TELEGRAM_OIDC_JWKS_PATH = "/oauth/.well-known/jwks.json";
 const WEBHOOK_ORIGIN = "https://booking.iversdev.ru";
 const WEBHOOK_PATH = /^\/api\/v1\/telegram\/python-webhook\/[1-9]\d*$/;
 
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+
+    if (url.pathname === TELEGRAM_OIDC_JWKS_PATH) {
+      if (request.method !== "GET") {
+        return new Response("Method not allowed", { status: 405 });
+      }
+
+      return fetch(new Request("https://oauth.telegram.org/.well-known/jwks.json", request));
+    }
 
     if (WEBHOOK_PATH.test(url.pathname)) {
       if (request.method !== "POST") {

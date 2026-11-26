@@ -110,8 +110,10 @@ class TelegramIdentityTokenVerifier
     private function keys(): array
     {
         return Cache::remember('telegram_oidc_jwks', now()->addHour(), function (): array {
-            $response = Http::timeout(5)
-                ->get('https://oauth.telegram.org/.well-known/jwks.json')
+            $jwksUrl = rtrim((string) config('services.telegram.api_base'), '/')
+                .'/oauth/.well-known/jwks.json';
+            $response = Http::timeout(10)
+                ->get($jwksUrl)
                 ->throw();
             $payload = $response->json();
 

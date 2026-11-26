@@ -28,18 +28,16 @@ Initial endpoints:
 tenants to `USD`; update `tenants.currency` to configure a different currency.
 Service prices are stored in hundredths of the configured currency.
 
-Customers register and sign in with a username unique within their organization;
-email is optional and is not used for new-account sign-in. Owners and managers
-continue to sign in by email. Existing customer and specialist accounts without
-a username can temporarily sign in by email and are prompted to choose a
-username. Telegram WebApp sign-in verifies the signed `init_data` on the backend, rejects
-data older than five minutes, and uses the configured main-bot token or the
-organization's connected bot token. Unlinked Telegram users can either sign in
-to an existing customer account and link it or create a customer account.
-Telegram identities are globally unique; an identity can receive a customer
-membership when it opens another organization. Owner/manager accounts cannot
-be linked for Telegram sign-in. Email verification and other external identity
-providers are not enabled.
+Customers register with an email, a username unique within their organization,
+or both, and can sign in with either identifier. Owners and managers continue
+to sign in by email or Google. Google ID tokens are verified on the backend;
+Google and Telegram accounts can be linked from the profile. Telegram WebApp
+sign-in verifies signed `init_data`, rejects data older than five minutes, and
+uses the configured main-bot token or organization's connected bot token.
+Unlinked Telegram users can sign in to an existing customer account and link it
+or create a customer account. Telegram identities are globally unique; an
+identity can receive a customer membership when it opens another organization.
+Telegram sign-in and linking are available only for customers and specialists.
 
 The main bot token is read from `TELEGRAM_MAIN_BOT_TOKEN`. An organization
 owner can connect one manually-created bot under `PUT /api/v1/manage/telegram-bot`;
@@ -57,8 +55,12 @@ Bot API requests use `TG_API_BASE`; Laravel and the Python worker do not fall
 back to `api.telegram.org`. Webhook registration uses the same base URL, and the
 proxy forwards webhook paths to the public application URL while preserving
 Telegram's secret header. The Cloudflare Worker implementation is in
-`telegram-worker/cloudflare-proxy.js`. Deploy that Worker before refreshing
-connected bots. The proxy receives bot tokens as part of Bot API request URLs.
+`telegram-worker/cloudflare-proxy.js`. Deploy that Worker when its routes change;
+existing bot webhooks do not need refreshing for the JWKS route. The backend
+also loads Telegram Login signing keys through
+`TG_API_BASE/oauth/.well-known/jwks.json`, which the Worker forwards to
+`oauth.telegram.org`; direct outbound access from the app container is not
+required. The proxy receives bot tokens as part of Bot API request URLs.
 Marketing broadcasts use a separate tenant-scoped subscription, distinct from
 booking notification consent, and are queued through Horizon.
 

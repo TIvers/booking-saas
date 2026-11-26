@@ -43,13 +43,14 @@ function telegramOidcTestToken($privateKey, array $claims, string $keyId = 'tele
 
 beforeEach(function (): void {
     Cache::forget('telegram_oidc_jwks');
+    config()->set('services.telegram.api_base', 'https://telegram-proxy.example.test');
     config()->set('services.telegram.login_client_id', '123456789');
 });
 
 it('verifies a signed Telegram identity token and its nonce', function () {
     [$privateKey, $rsa] = telegramOidcTestKeyPair();
     Http::fake([
-        'https://oauth.telegram.org/.well-known/jwks.json' => Http::response([
+        'https://telegram-proxy.example.test/oauth/.well-known/jwks.json' => Http::response([
             'keys' => [[
                 'kty' => 'RSA',
                 'alg' => 'RS256',
@@ -79,7 +80,7 @@ it('verifies a signed Telegram identity token and its nonce', function () {
 it('rejects Telegram identity tokens with a mismatched nonce', function () {
     [$privateKey, $rsa] = telegramOidcTestKeyPair();
     Http::fake([
-        'https://oauth.telegram.org/.well-known/jwks.json' => Http::response([
+        'https://telegram-proxy.example.test/oauth/.well-known/jwks.json' => Http::response([
             'keys' => [[
                 'kty' => 'RSA',
                 'alg' => 'RS256',
