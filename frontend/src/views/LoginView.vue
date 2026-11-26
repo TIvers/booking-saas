@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
 import type { ApiResponse } from '@/api/types'
 import AuthForm from '@/features/auth/AuthForm.vue'
+import { preferredEmailVerificationChannel } from '@/features/auth/emailVerification'
 import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
@@ -14,7 +15,13 @@ const isTelegramLinkFlow = computed(() => route.query.link === 'telegram')
 const tenantSlug = computed(() =>
   typeof route.query.tenant === 'string' ? route.query.tenant : '',
 )
-const canLinkTelegram = computed(() => auth.role === 'customer' || auth.role === 'staff')
+const canLinkTelegram = computed(
+  () => auth.user?.account_type === 'customer' && auth.role === 'customer',
+)
+const organizationLogin = ref('')
+const organizationPassword = ref('')
+const organizationBusy = ref(false)
+const organizationError = ref('')
 const telegramLinkSettings = ref<{ clientId: string; nonce: string } | null>(null)
 const telegramLinkLoading = ref(false)
 const telegramLinkBusy = ref(false)
@@ -29,6 +36,10 @@ const isManagementRedirect = computed(() => {
       || redirect.startsWith(`/t/${tenantSlug.value}/manage/`)
     )
 })
+const isOrganizationLogin = computed(
+  () => route.query.account === 'organization'
+    || (route.query.account !== 'customer' && isManagementRedirect.value),
+)
 
 function afterAuthentication(): void {
   const redirect = route.query.redirect
@@ -43,6 +54,53 @@ function afterAuthentication(): void {
         : { name: 'booking', params: { tenantSlug: slug } }
 
   void router.replace(destination)
+}
+
+function selectAccountType(accountType: 'customer' | 'organization'): void {
+  const query: LocationQueryRaw = { ...route.query, tenant: tenantSlug.value }
+
+  if (accountType === 'organization') {
+    query.account = 'organization'
+  } else {
+    query.account = 'customer'
+  }
+
+  void router.replace({ name: 'login', query })
+}
+
+async function submitOrganizationLogin(): Promise<void> {
+  organizationBusy.value = true
+  organizationError.value = ''
+
+  try {
+    const verification = await auth.loginOrganization({
+      login: organizationLogin.value,
+      password: organizationPassword.value,
+      verification_channel: preferredEmailVerificationChannel(),
+    })
+
+    if (verification) {
+      await router.push({
+        name: 'account-email-verification',
+        params: { tenantSlug: tenantSlug.value },
+        query: {
+          challenge: verification.challenge_id,
+          email: verification.email,
+          channel: verification.channel,
+        },
+      })
+      return
+    }
+
+    afterAuthentication()
+  } catch (error) {
+    organizationError.value = getApiProblem(
+      error,
+      'Не удалось войти в организацию. Проверьте данные и повторите попытку.',
+    ).message
+  } finally {
+    organizationBusy.value = false
+  }
 }
 
 function tenantRedirect(path: string, slug: string): string | null {
@@ -162,13 +220,38 @@ onMounted(() => {
             ? 'Привязка Telegram'
             : isManagementRedirect
               ? 'Вход в кабинет бизнеса'
-              : 'Войдите или зарегистрируйтесь'
+              : isOrganizationLogin
+                ? 'Вход в организацию'
+                : 'Войдите или зарегистрируйтесь'
         }}
       </h1>
       <p v-if="isTelegramLinkFlow">
         Подтвердите Telegram, чтобы привязать его к текущему аккаунту.
       </p>
+      <p v-else-if="isOrganizationLogin">
+        Владелец, менеджер или специалист входит по email или логину и паролю.
+      </p>
       <p v-else>Аккаунт нужен, чтобы сохранить запись и управлять ею.</p>
+    </div>
+    <div v-if="!isTelegramLinkFlow" class="account-type-tabs" role="tablist" aria-label="Тип аккаунта">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="!isOrganizationLogin"
+        :class="{ 'is-active': !isOrganizationLogin }"
+        @click="selectAccountType('customer')"
+      >
+        Клиент
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="isOrganizationLogin"
+        :class="{ 'is-active': isOrganizationLogin }"
+        @click="selectAccountType('organization')"
+      >
+        Организация
+      </button>
     </div>
     <div v-if="isTelegramLinkFlow" class="telegram-link">
       <p v-if="telegramLinkLoading" class="telegram-link__info">
@@ -184,7 +267,7 @@ onMounted(() => {
         Для привязки сначала войдите в аккаунт.
       </p>
       <p v-else-if="!canLinkTelegram" class="telegram-link__error" role="alert">
-        Привязка Telegram доступна для аккаунтов клиентов и специалистов.
+        Привязка Telegram доступна только клиентским аккаунтам.
       </p>
       <BaseButton
         v-if="telegramLinkSettings && auth.isAuthenticated && canLinkTelegram"
@@ -194,6 +277,40 @@ onMounted(() => {
         Подтвердить в Telegram
       </BaseButton>
     </div>
+    <form
+      v-else-if="isOrganizationLogin"
+      class="organization-login"
+      @submit.prevent="submitOrganizationLogin"
+    >
+      <label class="field">
+        <span>Email или логин</span>
+        <input
+          v-model.trim="organizationLogin"
+          required
+          maxlength="255"
+          autocapitalize="off"
+          autocomplete="username"
+        />
+      </label>
+      <label class="field">
+        <span>Пароль</span>
+        <input
+          v-model="organizationPassword"
+          type="password"
+          required
+          autocomplete="current-password"
+        />
+      </label>
+      <p v-if="organizationError" class="telegram-link__error" role="alert">
+        {{ organizationError }}
+      </p>
+      <BaseButton type="submit" :loading="organizationBusy" class="organization-login__submit">
+        Войти
+      </BaseButton>
+      <RouterLink class="organization-login__register" :to="{ name: 'home', query: { audience: 'organization' } }">
+        Создать новую организацию
+      </RouterLink>
+    </form>
     <AuthForm
       v-else
       initial-mode="login"
@@ -240,6 +357,76 @@ onMounted(() => {
 
 .login-view__intro {
   margin-bottom: 1.6rem;
+}
+
+.account-type-tabs {
+  background: #f0f3ef;
+  border-radius: 0.8rem;
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  padding: 0.25rem;
+}
+
+.account-type-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 0.65rem;
+  color: #66746d;
+  cursor: pointer;
+  flex: 1;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  min-height: 2.5rem;
+}
+
+.account-type-tabs button.is-active {
+  background: #fff;
+  box-shadow: 0 1px 5px #142b2214;
+  color: #204c43;
+}
+
+.organization-login {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.field > span {
+  color: #354a40;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.field input {
+  background: #fff;
+  border: 1px solid #d5dfd8;
+  border-radius: 0.65rem;
+  color: #1b2c24;
+  font: inherit;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.7rem;
+  width: 100%;
+}
+
+.field input:focus {
+  border-color: #568073;
+  outline: 3px solid #5680732b;
+}
+
+.organization-login__submit {
+  width: 100%;
+}
+
+.organization-login__register {
+  color: #31574e;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 .login-view h1 {

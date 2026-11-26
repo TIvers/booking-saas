@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AccountType;
 use App\Enums\Role;
 use App\Models\Membership;
 use App\Models\Staff;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\QueryException;
@@ -38,6 +40,11 @@ class StaffController
         $userIds = $staff->pluck('user_id')->filter()->values();
         $usernames = $userIds->isEmpty()
             ? collect()
+            : User::query()
+                ->whereIn('id', $userIds)
+                ->pluck('username', 'id');
+        $legacyUsernames = $userIds->isEmpty()
+            ? collect()
             : Membership::query()
                 ->whereIn('user_id', $userIds)
                 ->pluck('username', 'user_id');
@@ -46,7 +53,9 @@ class StaffController
             $member->setAttribute('account_linked', $member->user_id !== null);
             $member->setAttribute(
                 'account_username',
-                $member->user_id === null ? null : $usernames->get($member->user_id),
+                $member->user_id === null
+                    ? null
+                    : ($usernames->get($member->user_id) ?? $legacyUsernames->get($member->user_id)),
             );
         });
 
@@ -118,15 +127,28 @@ class StaffController
         abort_if($staff->user_id !== null, 409, 'This specialist already has an account.');
 
         $tenantId = (int) $request->attributes->get('tenant')->getKey();
+        $request->merge([
+            'username' => mb_strtolower(trim((string) $request->input('username'))),
+            'email' => $request->input('email') === null
+                ? null
+                : mb_strtolower(trim((string) $request->input('email'))),
+        ]);
         $data = $request->validate([
             'username' => [
                 'required',
                 'string',
                 'max:32',
                 'regex:/^[a-z0-9][a-z0-9_.-]{2,31}$/',
-                Rule::unique('memberships', 'username')->where('tenant_id', $tenantId),
+                Rule::unique('users', 'username')
+                    ->where('account_type', AccountType::Organization->value),
             ],
-            'email' => ['nullable', 'email', 'max:255'],
+            'email' => [
+                'nullable',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')
+                    ->where('account_type', AccountType::Organization->value),
+            ],
             'password' => ['required', 'string', 'min:12', 'confirmed'],
         ]);
 
@@ -140,8 +162,11 @@ class StaffController
                 DB::table('users')->insert([
                     'id' => $userId,
                     'name' => $staff->display_name,
+                    'account_type' => AccountType::Organization->value,
+                    'username' => $data['username'],
                     'email' => $data['email'] ?? null,
                     'password' => Hash::make($data['password']),
+                    'password_set_at' => $now,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
@@ -156,15 +181,24 @@ class StaffController
             $sqlState = $exception->errorInfo[0] ?? (string) $exception->getCode();
             $constraint = $exception->errorInfo[2] ?? '';
 
-            if ($sqlState === '23505' && str_contains($constraint, 'users_email')) {
+            if (
+                $sqlState === '23505'
+                && (
+                    str_contains($constraint, 'users_email')
+                    || str_contains($constraint, 'email_lower_unique')
+                )
+            ) {
                 throw ValidationException::withMessages([
                     'email' => ['The email address is already registered.'],
                 ]);
             }
 
-            if ($sqlState === '23505' && str_contains($constraint, 'memberships_tenant_username')) {
+            if (
+                $sqlState === '23505'
+                && str_contains($constraint, 'username_lower_unique')
+            ) {
                 throw ValidationException::withMessages([
-                    'username' => ['The username is already in use in this organization.'],
+                    'username' => ['This login is already in use.'],
                 ]);
             }
 

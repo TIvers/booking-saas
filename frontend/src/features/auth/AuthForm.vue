@@ -3,7 +3,9 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
 import type { ApiResponse } from '@/api/types'
-import { useAuthStore } from '@/stores/auth'
+import EmailVerificationPrompt from './EmailVerificationPrompt.vue'
+import { preferredEmailVerificationChannel } from './emailVerification'
+import { useAuthStore, type EmailVerificationChallenge } from '@/stores/auth'
 
 const props = defineProps<{
   initialMode?: 'login' | 'register'
@@ -30,6 +32,7 @@ const showRecoveryEmailPrompt = ref(false)
 const recoveryEmail = ref('')
 const message = ref('')
 const fieldErrors = ref<Record<string, string[]>>({})
+const verificationChallenge = ref<EmailVerificationChallenge | null>(null)
 const pendingTelegramInitData = ref('')
 const pendingTelegramOidc = ref(false)
 const googleButton = ref<HTMLDivElement | null>(null)
@@ -56,19 +59,26 @@ async function submit(): Promise<void> {
 
   try {
     if (mode.value === 'register') {
-      await auth.register({
+      verificationChallenge.value = await auth.register({
         name: name.value,
-        username: username.value || undefined,
-        email: email.value || undefined,
+        username: username.value,
+        email: email.value,
         password: password.value,
         password_confirmation: passwordConfirmation.value,
+        verification_channel: preferredEmailVerificationChannel(),
       })
-    } else {
-      await auth.login({
-        login: login.value,
-        password: password.value,
-        remember: remember.value,
-      })
+      return
+    }
+
+    const verification = await auth.login({
+      login: login.value,
+      password: password.value,
+      remember: remember.value,
+      verification_channel: preferredEmailVerificationChannel(),
+    })
+    if (verification) {
+      verificationChallenge.value = verification
+      return
     }
     const linkingTelegram = Boolean(pendingTelegramInitData.value || pendingTelegramOidc.value)
     if (pendingTelegramInitData.value) {
@@ -338,7 +348,16 @@ async function saveRecoveryEmail(): Promise<void> {
   fieldErrors.value = {}
 
   try {
-    await auth.updateEmail(recoveryEmail.value.trim())
+    const challenge = await auth.updateEmail(
+      recoveryEmail.value.trim(),
+      preferredEmailVerificationChannel(),
+    )
+    if (challenge) {
+      verificationChallenge.value = challenge
+      showRecoveryEmailPrompt.value = false
+      return
+    }
+
     showRecoveryEmailPrompt.value = false
     emit('authenticated')
   } catch (error) {
@@ -353,6 +372,16 @@ async function saveRecoveryEmail(): Promise<void> {
 function continueWithoutEmail(): void {
   showRecoveryEmailPrompt.value = false
   emit('authenticated')
+}
+
+function onEmailVerified(): void {
+  verificationChallenge.value = null
+  showRecoveryEmailPrompt.value = false
+  emit('authenticated')
+}
+
+function updateVerificationChallenge(challenge: EmailVerificationChallenge): void {
+  verificationChallenge.value = challenge
 }
 
 async function saveUsername(): Promise<void> {
@@ -389,8 +418,14 @@ onMounted(() => {
 
 <template>
   <section class="auth-form">
+    <EmailVerificationPrompt
+      v-if="verificationChallenge"
+      :challenge="verificationChallenge"
+      @verified="onEmailVerified"
+      @challenge-updated="updateVerificationChallenge"
+    />
     <form
-      v-if="showRecoveryEmailPrompt"
+      v-else-if="showRecoveryEmailPrompt"
       class="auth-form__fields recovery-email-form"
       @submit.prevent="saveRecoveryEmail"
     >
@@ -477,10 +512,10 @@ onMounted(() => {
       </label>
 
       <label v-if="mode === 'register'" class="field">
-        <span>Логин (необязательно, если указан email)</span>
+        <span>Глобальный логин</span>
         <input
           v-model.trim="username"
-          :required="!email"
+          required
           minlength="3"
           maxlength="32"
           pattern="[a-z0-9][a-z0-9_.-]{2,31}"
@@ -491,11 +526,11 @@ onMounted(() => {
       </label>
 
       <label v-if="mode === 'register'" class="field">
-        <span>Email (необязательно, если указан логин)</span>
+        <span>Email</span>
         <input
           v-model.trim="email"
           type="email"
-          :required="!username"
+          required
           autocomplete="email"
           maxlength="255"
         />
@@ -503,7 +538,7 @@ onMounted(() => {
       </label>
 
       <p v-if="mode === 'register'" class="form-message form-message--info">
-        Укажите email или логин — для входа позже подойдёт любой из них.
+        Email нужно подтвердить. Для входа можно использовать email или логин.
       </p>
 
       <label v-else class="field">

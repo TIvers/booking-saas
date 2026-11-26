@@ -22,6 +22,16 @@ Route::prefix('v1')
         Route::get('/tenant', [AuthController::class, 'tenant']);
         Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:6,1');
         Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:6,1');
+        Route::post('/auth/organization/login', [AuthController::class, 'loginOrganization'])
+            ->middleware('throttle:6,1');
+        Route::post('/auth/email/verification/code', [AuthController::class, 'verifyEmailCode'])
+            ->middleware('throttle:6,1');
+        Route::post('/auth/email/verification/link', [AuthController::class, 'verifyEmailLink'])
+            ->middleware('throttle:10,1');
+        Route::post('/auth/email/verification/resend', [AuthController::class, 'resendEmailVerification'])
+            ->middleware('throttle:3,1');
+        Route::put('/auth/password', [AuthController::class, 'setPassword'])
+            ->middleware(['auth:sanctum', 'tenant.member', 'throttle:6,1']);
         Route::get('/auth/google/config', [AuthController::class, 'googleConfig']);
         Route::post('/auth/google', [AuthController::class, 'google'])->middleware('throttle:10,1');
         Route::post('/auth/google/link', [AuthController::class, 'linkGoogle'])
@@ -44,7 +54,7 @@ Route::prefix('v1')
         Route::put('/auth/username', [AuthController::class, 'updateUsername'])
             ->middleware(['auth:sanctum', 'tenant.member']);
         Route::put('/auth/email', [AuthController::class, 'updateEmail'])
-            ->middleware(['auth:sanctum', 'tenant.member']);
+            ->middleware(['auth:sanctum', 'tenant.member', 'throttle:3,1']);
         Route::put('/auth/profile', [AuthController::class, 'updateProfile'])
             ->middleware(['auth:sanctum', 'tenant.member']);
 

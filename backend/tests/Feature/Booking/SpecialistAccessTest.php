@@ -85,7 +85,7 @@ it('limits specialists to their own bookings and gives them read-only schedule a
         ->json('data.id');
 
     $this->withHeaders($headers)
-        ->postJson('/api/v1/auth/login', [
+        ->postJson('/api/v1/auth/organization/login', [
             'login' => $specialistCredentials['username'],
             'password' => $specialistCredentials['password'],
         ])

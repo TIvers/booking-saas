@@ -6,10 +6,13 @@ import type { TenantRole } from '@/api/types'
 
 export interface AuthUser {
   id: number
+  account_type: 'customer' | 'organization'
   name: string
   email: string | null
+  email_verified: boolean
   phone: string | null
   username: string | null
+  has_password: boolean
   telegram_linked: boolean
   google_linked: boolean
 }
@@ -32,6 +35,13 @@ interface AccountLinkResponse extends AuthPayload {
 interface AccountLinkOutcome {
   merged: boolean
   alreadyLinked: boolean
+}
+
+export interface EmailVerificationChallenge {
+  challenge_id: string
+  email: string
+  channel: 'code' | 'link'
+  expires_at: string
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -99,26 +109,60 @@ export const useAuthStore = defineStore('auth', () => {
     login: string
     password: string
     remember: boolean
-  }): Promise<void> {
+    verification_channel: 'code' | 'link'
+  }): Promise<EmailVerificationChallenge | null> {
     await ensureCsrfCookie()
-    const response = await api.post<ApiResponse<AuthPayload>>('/auth/login', credentials)
+    const response = await api.post<ApiResponse<
+      AuthPayload | {
+        status: 'verification_required'
+        verification: EmailVerificationChallenge
+      }
+    >>('/auth/login', credentials)
+    if ('status' in response.data.data) {
+      return response.data.data.verification
+    }
+
     setAuth(response.data.data)
     initializedTenantSlug = useTenantStore().slug
     initialized.value = true
+    return null
+  }
+
+  async function loginOrganization(credentials: {
+    login: string
+    password: string
+    verification_channel: 'code' | 'link'
+  }): Promise<EmailVerificationChallenge | null> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<
+      AuthPayload | {
+        status: 'verification_required'
+        verification: EmailVerificationChallenge
+      }
+    >>('/auth/organization/login', credentials)
+    if ('status' in response.data.data) {
+      return response.data.data.verification
+    }
+
+    setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+    return null
   }
 
   async function register(credentials: {
     name: string
-    username?: string
-    email?: string
+    username: string
+    email: string
     password: string
     password_confirmation: string
-  }): Promise<void> {
+    verification_channel: 'code' | 'link'
+  }): Promise<EmailVerificationChallenge> {
     await ensureCsrfCookie()
-    const response = await api.post<ApiResponse<AuthPayload>>('/auth/register', credentials)
-    setAuth(response.data.data)
-    initializedTenantSlug = useTenantStore().slug
-    initialized.value = true
+    const response = await api.post<
+      ApiResponse<{ status: 'verification_required'; verification: EmailVerificationChallenge }>
+    >('/auth/register', credentials)
+    return response.data.data.verification
   }
 
   async function loginWithTelegram(initData: string, bot: 'main' | 'tenant'): Promise<boolean> {
@@ -226,9 +270,71 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function updateEmail(email: string): Promise<void> {
-    const response = await api.put<ApiResponse<{ email: string }>>('/auth/email', { email })
-    if (user.value) user.value.email = response.data.data.email
+  async function updateEmail(
+    email: string,
+    verificationChannel: 'code' | 'link',
+  ): Promise<EmailVerificationChallenge | null> {
+    const response = await api.put<ApiResponse<{
+      email: string
+      email_verified: boolean
+      verification_required: boolean
+      verification?: EmailVerificationChallenge
+    }>>('/auth/email', {
+      email,
+      verification_channel: verificationChannel,
+    })
+    if (user.value && !response.data.data.verification_required) {
+      user.value.email = response.data.data.email
+      user.value.email_verified = response.data.data.email_verified
+    }
+
+    return response.data.data.verification ?? null
+  }
+
+  async function setPassword(password: string, passwordConfirmation: string): Promise<void> {
+    await ensureCsrfCookie()
+    await api.put('/auth/password', {
+      password,
+      password_confirmation: passwordConfirmation,
+    })
+    if (user.value) user.value.has_password = true
+  }
+
+  async function verifyEmailCode(challengeId: string, code: string): Promise<void> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<AuthPayload>>('/auth/email/verification/code', {
+      challenge_id: challengeId,
+      code,
+    })
+    setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+  }
+
+  async function verifyEmailLink(challengeId: string, token: string): Promise<void> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<AuthPayload>>('/auth/email/verification/link', {
+      challenge_id: challengeId,
+      token,
+    })
+    setAuth(response.data.data)
+    initializedTenantSlug = useTenantStore().slug
+    initialized.value = true
+  }
+
+  async function resendEmailVerification(
+    challengeId: string,
+    verificationChannel: 'code' | 'link',
+  ): Promise<EmailVerificationChallenge> {
+    await ensureCsrfCookie()
+    const response = await api.post<ApiResponse<EmailVerificationChallenge>>(
+      '/auth/email/verification/resend',
+      {
+        challenge_id: challengeId,
+        verification_channel: verificationChannel,
+      },
+    )
+    return response.data.data
   }
 
   async function updateProfile(name: string, phone: string | null): Promise<void> {
@@ -265,6 +371,7 @@ export const useAuthStore = defineStore('auth', () => {
     reset,
     loadCurrentUser,
     login,
+    loginOrganization,
     register,
     loginWithTelegram,
     loginWithTelegramOidc,
@@ -276,6 +383,10 @@ export const useAuthStore = defineStore('auth', () => {
     linkTelegramOidcWithToken,
     linkGoogle,
     updateEmail,
+    setPassword,
+    verifyEmailCode,
+    verifyEmailLink,
+    resendEmailVerification,
     updateProfile,
     updateUsername,
     logout,

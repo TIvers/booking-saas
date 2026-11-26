@@ -29,6 +29,12 @@ jobs:
           TELEGRAM_MAIN_BOT_TOKEN: ${{ secrets.TELEGRAM_MAIN_BOT_TOKEN }}
           TELEGRAM_LOGIN_CLIENT_ID: ${{ vars.TELEGRAM_LOGIN_CLIENT_ID }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          MAIL_HOST: ${{ secrets.MAIL_HOST }}
+          MAIL_PORT: ${{ vars.MAIL_PORT }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_SCHEME: ${{ vars.MAIL_SCHEME }}
+          MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
         run: |
           set -euo pipefail
           : "${APP_KEY:?Add the APP_KEY repository secret}"
@@ -36,6 +42,10 @@ jobs:
           : "${DB_APP_PASSWORD:?Add the DB_APP_PASSWORD repository secret}"
           : "${REVERB_APP_KEY:?Add the REVERB_APP_KEY repository secret}"
           : "${REVERB_APP_SECRET:?Add the REVERB_APP_SECRET repository secret}"
+          : "${MAIL_HOST:?Add the MAIL_HOST repository secret}"
+          : "${MAIL_PORT:?Add the MAIL_PORT repository variable}"
+          : "${MAIL_SCHEME:?Add the MAIL_SCHEME repository variable}"
+          : "${MAIL_FROM_ADDRESS:?Add the MAIL_FROM_ADDRESS repository variable}"
           if [[ ! "$DB_APP_PASSWORD" =~ ^[A-Za-z0-9_-]{32,}$ ]]; then
             echo "DB_APP_PASSWORD must be at least 32 URL-safe characters" >&2
             exit 1
@@ -49,6 +59,21 @@ jobs:
           sed -i "s|^TELEGRAM_MAIN_BOT_TOKEN=.*|TELEGRAM_MAIN_BOT_TOKEN=${TELEGRAM_MAIN_BOT_TOKEN}|" backend/.env
           sed -i "s|^TELEGRAM_LOGIN_CLIENT_ID=.*|TELEGRAM_LOGIN_CLIENT_ID=${TELEGRAM_LOGIN_CLIENT_ID}|" backend/.env
           sed -i "s|^GOOGLE_CLIENT_ID=.*|GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}|" backend/.env
+          dotenv_quote() {
+            local value=${1//\\/\\\\}
+            value=${value//\"/\\\"}
+            value=${value//$'\n'/\\n}
+            printf '"%s"' "$value"
+          }
+          {
+            printf '\nMAIL_MAILER=smtp\n'
+            printf 'MAIL_HOST='; dotenv_quote "$MAIL_HOST"; printf '\n'
+            printf 'MAIL_PORT='; dotenv_quote "$MAIL_PORT"; printf '\n'
+            printf 'MAIL_USERNAME='; dotenv_quote "$MAIL_USERNAME"; printf '\n'
+            printf 'MAIL_PASSWORD='; dotenv_quote "$MAIL_PASSWORD"; printf '\n'
+            printf 'MAIL_SCHEME='; dotenv_quote "$MAIL_SCHEME"; printf '\n'
+            printf 'MAIL_FROM_ADDRESS='; dotenv_quote "$MAIL_FROM_ADDRESS"; printf '\n'
+          } >> backend/.env
 
       - name: Write deployment variables
         shell: bash

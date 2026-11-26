@@ -3,25 +3,46 @@
 declare(strict_types=1);
 
 use App\Enums\Role;
+use App\Mail\VerifyAccountEmail;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\Mail;
 
 uses(DatabaseMigrations::class);
 
 it('creates a tenant and owner account that can access the new tenant by slug', function () {
+    Mail::fake();
     $this->withHeader('Origin', 'http://localhost');
 
-    $this->postJson('/api/v1/onboarding', [
+    $registration = $this->postJson('/api/v1/onboarding', [
         'organization_name' => 'Новая студия',
         'slug' => 'new-studio',
         'timezone' => 'Europe/Moscow',
         'currency' => 'RUB',
         'owner_name' => 'Studio Owner',
+        'phone' => '+7 900 123-45-67',
+        'username' => 'studio-owner',
         'email' => 'owner@example.test',
         'password' => 'demo-owner-password',
         'password_confirmation' => 'demo-owner-password',
+        'verification_channel' => 'code',
     ])
-        ->assertCreated()
+        ->assertAccepted()
         ->assertJsonPath('data.tenant.slug', 'new-studio')
+        ->assertJsonPath('data.status', 'verification_required');
+
+    $message = Mail::sent(VerifyAccountEmail::class)->first();
+    expect($message)->not->toBeNull();
+
+    $this->withHeaders([
+        'Origin' => 'http://localhost',
+        'X-Tenant-Slug' => 'new-studio',
+    ])
+        ->postJson('/api/v1/auth/email/verification/code', [
+            'challenge_id' => $registration->json('data.verification.challenge_id'),
+            'code' => $message->code,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.user.account_type', 'organization')
         ->assertJsonPath('data.role', Role::Owner->value);
 
     $this->withHeader('X-Tenant-Slug', 'new-studio')
@@ -37,6 +58,7 @@ it('creates a tenant and owner account that can access the new tenant by slug', 
 });
 
 it('rejects duplicate tenant slugs during business onboarding', function () {
+    Mail::fake();
     $this->withHeader('Origin', 'http://localhost');
 
     $payload = [
@@ -45,13 +67,16 @@ it('rejects duplicate tenant slugs during business onboarding', function () {
         'timezone' => 'Europe/Moscow',
         'currency' => 'RUB',
         'owner_name' => 'First Owner',
+        'phone' => '+7 900 123-45-67',
+        'username' => 'first-owner',
         'email' => 'first-owner@example.test',
         'password' => 'demo-owner-password',
         'password_confirmation' => 'demo-owner-password',
+        'verification_channel' => 'link',
     ];
 
     $this->postJson('/api/v1/onboarding', $payload)
-        ->assertCreated();
+        ->assertAccepted();
 
     $payload['organization_name'] = 'Вторая студия';
     $payload['email'] = 'second-owner@example.test';

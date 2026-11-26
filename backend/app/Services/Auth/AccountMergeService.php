@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Auth;
 
+use App\Enums\AccountType;
 use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -135,6 +136,13 @@ class AccountMergeService
             $this->reject('One of these accounts is no longer available.');
         }
 
+        if (
+            $target->account_type !== AccountType::Customer->value
+            || $source->account_type !== AccountType::Customer->value
+        ) {
+            $this->reject('Only client accounts can be merged.');
+        }
+
         $sourceMemberships = DB::table('memberships')
             ->where('user_id', $sourceUserId)
             ->orderBy('tenant_id')
@@ -164,6 +172,8 @@ class AccountMergeService
 
         $targetEmail = trim((string) ($target->email ?? ''));
         $sourceEmail = trim((string) ($source->email ?? ''));
+        $targetHasPassword = $target->password_set_at !== null;
+        $sourceHasPassword = $source->password_set_at !== null;
 
         if (
             $targetEmail !== ''
@@ -171,6 +181,18 @@ class AccountMergeService
             && mb_strtolower($targetEmail) !== mb_strtolower($sourceEmail)
         ) {
             $this->reject('These accounts have different email addresses. Update them before merging.');
+        }
+
+        if ($targetHasPassword && $sourceHasPassword) {
+            $this->reject('Both accounts have password logins. Resolve their login credentials before merging.');
+        }
+
+        if (
+            $target->username !== null
+            && $source->username !== null
+            && $target->username !== $source->username
+        ) {
+            $this->reject('These accounts have different global logins. Resolve them before merging.');
         }
 
         $now = now();
@@ -190,6 +212,7 @@ class AccountMergeService
                 ->update(['email' => null, 'email_verified_at' => null]);
             $targetUpdates['email'] = $sourceEmail;
             $targetUpdates['email_verified_at'] = $source->email_verified_at;
+            $targetUpdates['email_verification_pending'] = $source->email_verification_pending;
         } elseif (
             $targetEmail !== ''
             && $sourceEmail !== ''
@@ -197,6 +220,25 @@ class AccountMergeService
             && $source->email_verified_at !== null
         ) {
             $targetUpdates['email_verified_at'] = $source->email_verified_at;
+            $targetUpdates['email_verification_pending'] = false;
+        }
+
+        if (! $targetHasPassword && $sourceHasPassword) {
+            $targetUpdates['password'] = $source->password;
+            $targetUpdates['password_set_at'] = $source->password_set_at;
+        }
+
+        if ($target->username === null && $source->username !== null) {
+            $targetUpdates['username'] = $source->username;
+        }
+
+        if (
+            (! $targetHasPassword && $sourceHasPassword)
+            || ($target->username === null && $source->username !== null)
+        ) {
+            DB::table('users')
+                ->where('id', $sourceUserId)
+                ->update(['username' => null]);
         }
 
         foreach ($sourceMemberships as $tenantId => $sourceMembership) {

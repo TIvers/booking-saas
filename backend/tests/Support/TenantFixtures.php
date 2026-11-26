@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Enums\AccountType;
 use App\Enums\Role;
 use App\Models\Location;
 use App\Models\Membership;
@@ -53,6 +54,7 @@ final class TenantFixtures
         self::activate($tenant);
 
         $user = User::factory()->make($attributes);
+        $username = $attributes['username'] ?? $user->username;
         $userId = (int) DB::selectOne(
             "SELECT nextval(pg_get_serial_sequence('users', 'id')) AS id"
         )->id;
@@ -63,8 +65,14 @@ final class TenantFixtures
             'id' => $userId,
             'name' => $user->name,
             'email' => $user->email,
+            'account_type' => $role === Role::Customer
+                ? AccountType::Customer->value
+                : AccountType::Organization->value,
             'email_verified_at' => $user->email_verified_at,
+            'username' => $username,
             'password' => $user->getAuthPassword(),
+            'password_set_at' => $user->password_set_at,
+            'email_verification_pending' => $user->email_verification_pending ?? false,
             'remember_token' => $user->getRememberToken(),
             'created_at' => $now,
             'updated_at' => $now,
@@ -73,6 +81,7 @@ final class TenantFixtures
         Membership::create([
             'user_id' => $userId,
             'role' => $role,
+            'username' => $username,
         ]);
 
         return User::query()->findOrFail($userId);

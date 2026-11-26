@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Enums\AccountType;
 use App\Enums\Role;
 use App\Models\Location;
 use App\Models\Membership;
@@ -127,7 +128,10 @@ class DemoTenantSeeder extends Seeder
             );
         }
 
-        $owner = DB::table('users')->where('email', $email)->first(['id']);
+        $owner = DB::table('users')
+            ->where('account_type', AccountType::Organization->value)
+            ->whereRaw('LOWER(email) = ?', [mb_strtolower($email)])
+            ->first(['id']);
         $now = now();
 
         if ($owner === null) {
@@ -139,6 +143,7 @@ class DemoTenantSeeder extends Seeder
                 'id' => $ownerId,
                 'name' => 'Владелец',
                 'email' => $email,
+                'account_type' => AccountType::Organization->value,
                 'password' => Hash::make($password),
                 'email_verified_at' => $now,
                 'created_at' => $now,
@@ -149,6 +154,7 @@ class DemoTenantSeeder extends Seeder
 
             DB::table('users')->where('id', $ownerId)->update([
                 'password' => Hash::make($password),
+                'account_type' => AccountType::Organization->value,
                 'updated_at' => $now,
             ]);
         }

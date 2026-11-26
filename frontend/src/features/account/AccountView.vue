@@ -4,7 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
 import type { ApiResponse } from '@/api/types'
+import EmailVerificationPrompt from '@/features/auth/EmailVerificationPrompt.vue'
+import { preferredEmailVerificationChannel } from '@/features/auth/emailVerification'
 import { useAuthStore } from '@/stores/auth'
+import type { EmailVerificationChallenge } from '@/stores/auth'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -12,13 +15,21 @@ const router = useRouter()
 const name = ref(auth.user?.name ?? '')
 const phone = ref(formatRussianPhone(auth.user?.phone ?? ''))
 const email = ref(auth.user?.email ?? '')
+const username = ref(auth.user?.username ?? '')
+const password = ref('')
+const passwordConfirmation = ref('')
 const profileBusy = ref(false)
 const emailBusy = ref(false)
+const usernameBusy = ref(false)
+const passwordBusy = ref(false)
 const telegramBusy = ref(false)
 const profileMessage = ref('')
 const profileError = ref('')
 const emailMessage = ref('')
 const emailError = ref('')
+const credentialsMessage = ref('')
+const credentialsError = ref('')
+const emailChallenge = ref<EmailVerificationChallenge | null>(null)
 const googleButton = ref<HTMLDivElement | null>(null)
 const googleClientId = ref('')
 const googleBusy = ref(false)
@@ -28,7 +39,10 @@ const googleMessage = ref('')
 const telegramMessage = ref('')
 const telegramError = ref('')
 const telegramInitData = computed(() => window.Telegram?.WebApp?.initData ?? '')
-const canLinkTelegram = computed(() => auth.role === 'customer' || auth.role === 'staff')
+const canLinkProviders = computed(() => auth.user?.account_type === 'customer')
+const canLinkTelegram = computed(
+  () => canLinkProviders.value && auth.role === 'customer',
+)
 const telegramBot = computed<'main' | 'tenant'>(() =>
   new URLSearchParams(window.location.search).get('tg_bot') === 'tenant' ? 'tenant' : 'main',
 )
@@ -90,6 +104,7 @@ watch(
     name.value = auth.user?.name ?? ''
     phone.value = formatRussianPhone(auth.user?.phone ?? '')
     email.value = auth.user?.email ?? ''
+    username.value = auth.user?.username ?? ''
   },
   { immediate: true },
 )
@@ -115,13 +130,58 @@ async function saveEmail(): Promise<void> {
   emailError.value = ''
 
   try {
-    await auth.updateEmail(email.value.trim())
-    emailMessage.value = 'Email обновлён.'
+    const challenge = await auth.updateEmail(email.value.trim(), preferredEmailVerificationChannel())
+    emailChallenge.value = challenge
+    emailMessage.value = challenge
+      ? 'Отправили письмо. Подтвердите новый адрес, чтобы завершить изменение.'
+      : 'Этот email уже подтверждён.'
   } catch (error) {
     emailError.value = getApiProblem(error, 'Не удалось обновить email.').message
   } finally {
     emailBusy.value = false
   }
+}
+
+async function saveUsername(): Promise<void> {
+  usernameBusy.value = true
+  credentialsMessage.value = ''
+  credentialsError.value = ''
+
+  try {
+    await auth.updateUsername(username.value.trim())
+    credentialsMessage.value = 'Глобальный логин сохранён.'
+  } catch (error) {
+    credentialsError.value = getApiProblem(error, 'Не удалось сохранить логин.').message
+  } finally {
+    usernameBusy.value = false
+  }
+}
+
+async function savePassword(): Promise<void> {
+  passwordBusy.value = true
+  credentialsMessage.value = ''
+  credentialsError.value = ''
+
+  try {
+    await auth.setPassword(password.value, passwordConfirmation.value)
+    password.value = ''
+    passwordConfirmation.value = ''
+    credentialsMessage.value = 'Парольный вход включён.'
+  } catch (error) {
+    credentialsError.value = getApiProblem(error, 'Не удалось сохранить пароль.').message
+  } finally {
+    passwordBusy.value = false
+  }
+}
+
+function onEmailVerified(): void {
+  emailChallenge.value = null
+  email.value = auth.user?.email ?? email.value
+  emailMessage.value = 'Email подтверждён.'
+}
+
+function updateEmailChallenge(challenge: EmailVerificationChallenge): void {
+  emailChallenge.value = challenge
 }
 
 async function connectTelegram(): Promise<void> {
@@ -230,7 +290,7 @@ async function loadGoogleButton(): Promise<void> {
 }
 
 onMounted(() => {
-  if (!auth.user?.google_linked) void loadGoogleButton()
+  if (canLinkProviders.value && !auth.user?.google_linked) void loadGoogleButton()
 })
 </script>
 
@@ -293,9 +353,83 @@ onMounted(() => {
         <p v-if="emailMessage" class="message message--success" role="status">{{ emailMessage }}</p>
         <BaseButton type="submit" :loading="emailBusy">Сохранить email</BaseButton>
       </form>
+      <p class="help-text">
+        Статус: {{ auth.user?.email_verified ? 'email подтверждён' : 'email не подтверждён' }}.
+        Для аккаунта Google подтверждённый Google email считается подтверждённым.
+      </p>
+      <EmailVerificationPrompt
+        v-if="emailChallenge"
+        :challenge="emailChallenge"
+        @verified="onEmailVerified"
+        @challenge-updated="updateEmailChallenge"
+      />
     </section>
 
-    <section class="account-card" aria-labelledby="connections-title">
+    <section class="account-card" aria-labelledby="credentials-title">
+      <h2 id="credentials-title">Парольный вход</h2>
+      <p class="help-text">
+        Логин уникален для всей платформы. Для входа можно использовать его или подтверждённый email.
+      </p>
+      <form class="account-form" @submit.prevent="saveUsername">
+        <label class="field">
+          <span>Глобальный логин</span>
+          <input
+            v-model.trim="username"
+            required
+            minlength="3"
+            maxlength="32"
+            pattern="[a-z0-9][a-z0-9_.-]{2,31}"
+            autocapitalize="off"
+            autocomplete="username"
+          />
+        </label>
+        <BaseButton type="submit" :loading="usernameBusy">Сохранить логин</BaseButton>
+      </form>
+      <form class="account-form" @submit.prevent="savePassword">
+        <label class="field">
+          <span>{{ auth.user?.has_password ? 'Новый пароль' : 'Пароль' }}</span>
+          <input
+            v-model="password"
+            type="password"
+            required
+            minlength="12"
+            autocomplete="new-password"
+          />
+        </label>
+        <label class="field">
+          <span>Повторите пароль</span>
+          <input
+            v-model="passwordConfirmation"
+            type="password"
+            required
+            minlength="12"
+            autocomplete="new-password"
+          />
+        </label>
+        <BaseButton
+          type="submit"
+          :loading="passwordBusy"
+          :disabled="!auth.user?.email_verified"
+        >
+          {{ auth.user?.has_password ? 'Изменить пароль' : 'Установить пароль' }}
+        </BaseButton>
+      </form>
+      <p v-if="!auth.user?.email_verified" class="help-text">
+        Сначала укажите и подтвердите email.
+      </p>
+      <p v-if="credentialsError" class="message message--error" role="alert">
+        {{ credentialsError }}
+      </p>
+      <p v-if="credentialsMessage" class="message message--success" role="status">
+        {{ credentialsMessage }}
+      </p>
+    </section>
+
+    <section
+      v-if="canLinkProviders"
+      class="account-card"
+      aria-labelledby="connections-title"
+    >
       <div class="section-heading">
         <div>
           <h2 id="connections-title">Привязанные аккаунты</h2>
@@ -358,7 +492,7 @@ onMounted(() => {
         Подтвердите Telegram на общей странице. Если найден второй профиль, он будет объединён с текущим.
       </p>
       <p v-if="!auth.user?.telegram_linked && !canLinkTelegram" class="help-text">
-        Привязка Telegram сейчас доступна для аккаунтов клиентов и специалистов.
+        Привязка Telegram доступна только клиентским аккаунтам.
       </p>
       <p v-if="telegramError" class="message message--error" role="alert">{{ telegramError }}</p>
       <p v-if="telegramMessage" class="message message--success" role="status">{{ telegramMessage }}</p>

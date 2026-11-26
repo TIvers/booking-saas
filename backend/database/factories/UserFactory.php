@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\AccountType;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -20,8 +21,11 @@ class UserFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
+            'account_type' => AccountType::Customer,
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('test-password'),
+            'password_set_at' => now(),
+            'email_verification_pending' => false,
             'remember_token' => Str::random(10),
         ];
     }

@@ -17,6 +17,7 @@ import ServicesManager from '@/features/services/ServicesManager.vue'
 import StaffManager from '@/features/staff/StaffManager.vue'
 import TelegramManager from '@/features/telegram/TelegramManager.vue'
 import LoginView from '@/views/LoginView.vue'
+import EmailVerificationView from '@/views/EmailVerificationView.vue'
 import UsernameSetupView from '@/views/UsernameSetupView.vue'
 import TenantLandingView from '@/views/TenantLandingView.vue'
 
@@ -53,6 +54,11 @@ export const router = createRouter({
       name: 'account',
       component: AccountView,
       meta: { requiresAuthenticated: true },
+    },
+    {
+      path: '/t/:tenantSlug/account/verify-email',
+      name: 'account-email-verification',
+      component: EmailVerificationView,
     },
     {
       path: '/t/:tenantSlug/account/username',

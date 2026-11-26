@@ -1,24 +1,35 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { api, ensureCsrfCookie, getApiProblem } from '@/api/client'
+import { preferredEmailVerificationChannel } from '@/features/auth/emailVerification'
 
 interface OnboardingResponse {
   data: {
     tenant: {
       slug: string
     }
+    verification: {
+      challenge_id: string
+      email: string
+      channel: 'code' | 'link'
+      expires_at: string
+    }
   }
 }
 
 const router = useRouter()
+const route = useRoute()
+const audience = ref(route.query.audience === 'customer' ? 'customer' : 'organization')
 const lookupSlug = ref('')
 const organizationName = ref('')
 const slug = ref('')
 const timezone = ref('Europe/Moscow')
 const currency = ref('RUB')
 const ownerName = ref('')
+const phone = ref('')
+const username = ref('')
 const email = ref('')
 const password = ref('')
 const passwordConfirmation = ref('')
@@ -31,6 +42,16 @@ function openOrganization(): void {
   if (!organizationSlug) return
 
   void router.push({ name: 'booking', params: { tenantSlug: organizationSlug } })
+}
+
+function signInToOrganization(): void {
+  const organizationSlug = lookupSlug.value.trim()
+  if (!organizationSlug) return
+
+  void router.push({
+    name: 'login',
+    query: { tenant: organizationSlug, account: 'organization' },
+  })
 }
 
 async function createOrganization(): Promise<void> {
@@ -46,14 +67,22 @@ async function createOrganization(): Promise<void> {
       timezone: timezone.value,
       currency: currency.value,
       owner_name: ownerName.value,
+      phone: phone.value,
+      username: username.value,
       email: email.value,
       password: password.value,
       password_confirmation: passwordConfirmation.value,
+      verification_channel: preferredEmailVerificationChannel(),
     })
 
     await router.push({
-      name: 'booking',
+      name: 'account-email-verification',
       params: { tenantSlug: response.data.data.tenant.slug },
+      query: {
+        challenge: response.data.data.verification.challenge_id,
+        email: response.data.data.verification.email,
+        channel: response.data.data.verification.channel,
+      },
     })
   } catch (error) {
     const problem = getApiProblem(error, 'Не удалось создать организацию. Проверьте данные.')
@@ -69,14 +98,35 @@ async function createOrganization(): Promise<void> {
   <section class="tenant-home">
     <header class="tenant-home__intro">
       <p class="eyebrow">BOOKING SAAS</p>
-      <h1>Онлайн-запись для вашей организации</h1>
-      <p>Откройте страницу записи своей компании или подключите новую организацию.</p>
+      <h1>Добро пожаловать</h1>
+      <p>Выберите, как хотите пользоваться сервисом.</p>
     </header>
 
-    <div class="tenant-home__columns">
+    <div class="audience-tabs" role="tablist" aria-label="Тип аккаунта">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="audience === 'customer'"
+        :class="{ 'is-active': audience === 'customer' }"
+        @click="audience = 'customer'"
+      >
+        Я клиент
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="audience === 'organization'"
+        :class="{ 'is-active': audience === 'organization' }"
+        @click="audience = 'organization'"
+      >
+        Я представляю организацию
+      </button>
+    </div>
+
+    <div v-if="audience === 'customer'" class="tenant-home__columns">
       <section class="tenant-card">
-        <p class="eyebrow">УЖЕ ЕСТЬ СТРАНИЦА?</p>
-        <h2>Открыть организацию</h2>
+        <p class="eyebrow">КЛИЕНТСКИЙ АККАУНТ</p>
+        <h2>Перейти к записи</h2>
         <form class="tenant-form" @submit.prevent="openOrganization">
           <label class="field">
             <span>Адрес организации</span>
@@ -96,7 +146,35 @@ async function createOrganization(): Promise<void> {
           <BaseButton type="submit" variant="secondary">Перейти к записи</BaseButton>
         </form>
         <p class="tenant-card__hint">
-          Ссылка на страницу записи выглядит так: <code>/t/название-компании</code>.
+          Войдите или зарегистрируйтесь на странице выбранной организации. Клиентский вход и Google/Telegram остаются доступными.
+        </p>
+      </section>
+    </div>
+
+    <div v-else class="tenant-home__columns">
+      <section class="tenant-card">
+        <p class="eyebrow">УЖЕ ЕСТЬ АККАУНТ?</p>
+        <h2>Войти в организацию</h2>
+        <form class="tenant-form" @submit.prevent="signInToOrganization">
+          <label class="field">
+            <span>Адрес организации</span>
+            <div class="slug-input">
+              <span>/t/</span>
+              <input
+                v-model.trim="lookupSlug"
+                required
+                maxlength="63"
+                pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                autocapitalize="off"
+                autocomplete="organization"
+                placeholder="studio-oliva"
+              />
+            </div>
+          </label>
+          <BaseButton type="submit" variant="secondary">Продолжить ко входу</BaseButton>
+        </form>
+        <p class="tenant-card__hint">
+          Для владельцев, менеджеров и специалистов доступен вход по email или логину и паролю.
         </p>
       </section>
 
@@ -156,6 +234,26 @@ async function createOrganization(): Promise<void> {
             <span>Ваше имя</span>
             <input v-model.trim="ownerName" required maxlength="255" autocomplete="name" />
             <small v-if="fieldErrors.owner_name">{{ fieldErrors.owner_name[0] }}</small>
+          </label>
+
+          <label class="field">
+            <span>Телефон</span>
+            <input v-model.trim="phone" type="tel" required maxlength="32" autocomplete="tel" />
+            <small v-if="fieldErrors.phone">{{ fieldErrors.phone[0] }}</small>
+          </label>
+
+          <label class="field">
+            <span>Логин</span>
+            <input
+              v-model.trim="username"
+              required
+              minlength="3"
+              maxlength="32"
+              pattern="[a-z0-9][a-z0-9_.-]{2,31}"
+              autocapitalize="off"
+              autocomplete="username"
+            />
+            <small v-if="fieldErrors.username">{{ fieldErrors.username[0] }}</small>
           </label>
 
           <label class="field">
@@ -238,6 +336,36 @@ async function createOrganization(): Promise<void> {
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(16rem, 0.8fr) minmax(20rem, 1.2fr);
+}
+
+.audience-tabs {
+  background: #f0f3ef;
+  border-radius: 0.8rem;
+  display: flex;
+  gap: 0.25rem;
+  margin: 0 auto;
+  max-width: 32rem;
+  padding: 0.25rem;
+  width: 100%;
+}
+
+.audience-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 0.65rem;
+  color: #66746d;
+  cursor: pointer;
+  flex: 1;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  min-height: 2.5rem;
+}
+
+.audience-tabs button.is-active {
+  background: #fff;
+  box-shadow: 0 1px 5px #142b2214;
+  color: #204c43;
 }
 
 .tenant-card {

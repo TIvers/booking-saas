@@ -114,8 +114,16 @@ it('signs in a linked customer through Telegram OIDC', function () {
 
 it('merges legacy OIDC and Telegram WebApp accounts for the same Telegram user', function () {
     $tenant = TenantFixtures::createTenant('telegram-oidc-webapp-merge');
-    $webAppCustomer = TenantFixtures::createMember($tenant, ['email' => null], Role::Customer);
-    $oidcCustomer = TenantFixtures::createMember($tenant, ['email' => null], Role::Customer);
+    $webAppCustomer = TenantFixtures::createMember(
+        $tenant,
+        ['email' => null, 'password_set_at' => null],
+        Role::Customer,
+    );
+    $oidcCustomer = TenantFixtures::createMember(
+        $tenant,
+        ['email' => null, 'password_set_at' => null],
+        Role::Customer,
+    );
     TenantFixtures::activate($tenant);
     UserIdentity::query()->create([
         'user_id' => $webAppCustomer->getKey(),
@@ -210,7 +218,11 @@ it('allows an authenticated member to link Telegram from their profile', functio
 it('merges a Telegram-linked account into the current account and transfers its data', function () {
     $tenant = TenantFixtures::createTenant('telegram-oidc-profile-conflict');
     $customer = TenantFixtures::createMember($tenant, ['email' => null], Role::Customer);
-    $otherCustomer = TenantFixtures::createMember($tenant, ['email' => null], Role::Customer);
+    $otherCustomer = TenantFixtures::createMember(
+        $tenant,
+        ['email' => null, 'password_set_at' => null],
+        Role::Customer,
+    );
     TenantFixtures::activate($tenant);
     UserIdentity::query()->create([
         'user_id' => $otherCustomer->getKey(),

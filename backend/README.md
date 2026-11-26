@@ -12,39 +12,65 @@ integrations.
 Initial endpoints:
 
 - `POST /api/v1/onboarding` creates a tenant and its owner account from
-  `organization_name`, `slug`, `timezone`, `currency`, `owner_name`, `email`,
-  `password`, and `password_confirmation`.
+  `organization_name`, `slug`, `timezone`, `currency`, `owner_name`,
+  `phone`, `username`, `email`, `password`, and `password_confirmation`.
 - `GET /api/v1/tenant`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
+- `POST /api/v1/auth/organization/login`
 - `POST /api/v1/auth/telegram` and `/api/v1/auth/telegram/register`
 - `POST /api/v1/auth/telegram/link`
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/logout`
 - `PUT /api/v1/auth/username`
+- `POST /api/v1/auth/email/verification/code`
+- `POST /api/v1/auth/email/verification/link`
+- `POST /api/v1/auth/email/verification/resend`
 
 `GET /api/v1/tenant` includes the tenant's ISO 4217 `currency` code and the
 `demo_payments_enabled` feature flag. The database defaults existing and new
 tenants to `USD`; update `tenants.currency` to configure a different currency.
 Service prices are stored in hundredths of the configured currency.
 
-Customers register with an email, a username unique within their organization,
-or both, and can sign in with either identifier. Owners and managers continue
-to sign in by email or Google. Google ID tokens are verified on the backend;
-Google and Telegram accounts can be linked from the profile. Telegram WebApp
-sign-in verifies signed `init_data`, rejects data older than five minutes, and
-uses the configured main-bot token or organization's connected bot token.
+Customer registration requires an email, a unique customer username, and a
+password; the email must be verified before the first sign-in. Customers can
+sign in with email or username, and can also use Google or Telegram. Owners,
+managers, and specialists are organization accounts and use the separate
+`/auth/organization/login` endpoint with email or username and password only.
+Email addresses and usernames may be shared between customer and organization
+accounts, but remain unique within each account type. Desktop browsers receive
+a verification link; mobile clients receive a one-time code. Google-verified
+email addresses are trusted without an extra confirmation. Google and Telegram
+can only be linked to customer accounts, and a verified email plus a password
+can be added to a customer provider account. Telegram WebApp sign-in verifies
+signed `init_data`, rejects data older than five minutes, and uses the configured
+main-bot token or organization's connected bot token.
 Unlinked Telegram users can sign in to an existing customer account and link it
 or create a customer account. Telegram identities are globally unique; an
 identity can receive a customer membership when it opens another organization.
-Telegram sign-in and linking are available only for customers and specialists.
+Telegram sign-in and linking are available only for customers.
 Telegram WebApp and browser OIDC use the same numeric Telegram user ID; legacy
 OIDC subject-only identities are normalized on the next verified OIDC login or link.
-When a verified provider is already linked to another account, linking it from
-the current account merges the accounts into the current one and transfers
-their memberships, bookings, identities, and Telegram notification links.
-Conflicting roles, logins, specialist profiles, notification connections, or
-different email addresses block the merge without changing either account.
+When a verified provider is already linked to another customer account, linking
+it from the current customer account merges the accounts into the current one
+and transfers their memberships, bookings, identities, and Telegram notification links.
+Conflicting roles, global logins, two configured passwords, specialist
+profiles, notification connections, or different email addresses block the
+merge without changing either account. If only the source account has a
+configured password, its password and global login move to the current account.
+
+Migration `2026_11_26_000019_separate_customer_and_organization_accounts`
+separates existing mixed customer/organization profiles while preserving
+customer bookings and provider identities on a customer copy. It is intentionally
+irreversible; back up production and test the migration on a database copy first.
+
+Production deployment sends verification email through SMTP. Configure the
+`MAIL_HOST` GitHub secret and the `MAIL_PORT`, `MAIL_SCHEME`, and
+`MAIL_FROM_ADDRESS` repository variables. Set `MAIL_USERNAME` and
+`MAIL_PASSWORD` as secrets when the SMTP provider requires authentication.
+Use `smtp` for STARTTLS-capable servers or `smtps` for implicit TLS. The deploy
+workflow fails early when the required mail settings are missing; do not commit
+SMTP credentials to the repository.
 
 The main bot token is read from `TELEGRAM_MAIN_BOT_TOKEN`. An organization
 owner can connect one manually-created bot under `PUT /api/v1/manage/telegram-bot`;
@@ -81,7 +107,7 @@ staff. Writes require an authenticated tenant owner or manager:
 - `GET /api/v1/staff`, `POST /api/v1/staff`, `PATCH /api/v1/staff/{id}`, `DELETE /api/v1/staff/{id}`
 - `GET /api/v1/manage/services` and `GET /api/v1/manage/staff` include inactive records for managers.
 - `PUT /api/v1/staff/{id}/account` lets the organization owner create a
-  tenant-scoped specialist login for an unlinked team member.
+  separate organization account and login for an unlinked team member.
 - `GET /api/v1/staff/{id}/schedule`, `PUT /api/v1/staff/{id}/schedule`
 - `PUT` or `DELETE /api/v1/staff/{id}/schedule/exceptions/{YYYY-MM-DD}`
 

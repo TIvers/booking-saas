@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\AccountType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,7 +31,10 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
+            'account_type' => AccountType::class,
             'email_verified_at' => 'datetime',
+            'password_set_at' => 'datetime',
+            'email_verification_pending' => 'boolean',
             'password' => 'hashed',
         ];
     }

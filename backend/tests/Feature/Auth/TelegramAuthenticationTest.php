@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use App\Enums\Role;
+use App\Mail\VerifyAccountEmail;
 use App\Models\TenantTelegramBot;
+use App\Models\UserIdentity;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\Mail;
 use Tests\Support\TenantFixtures;
 
 uses(DatabaseMigrations::class);
@@ -35,6 +38,7 @@ beforeEach(function (): void {
 });
 
 it('registers a customer from valid Telegram WebApp authorization data', function () {
+    Mail::fake();
     $tenant = TenantFixtures::createTenant('telegram-registration');
     $headers = [
         'Origin' => 'http://localhost',
@@ -65,16 +69,40 @@ it('registers a customer from valid Telegram WebApp authorization data', functio
         ->assertJsonPath('data.user.username', null)
         ->assertJsonPath('data.user.telegram_linked', true);
 
+    $verification = $this->withHeaders($headers)
+        ->putJson('/api/v1/auth/email', [
+            'email' => 'telegram-recovery@example.test',
+            'verification_channel' => 'code',
+        ])
+        ->assertAccepted()
+        ->assertJsonPath('data.email_verified', false);
+
+    $message = Mail::sent(VerifyAccountEmail::class)->first();
+    expect($message)->not->toBeNull();
+
     $this->withHeaders($headers)
-        ->putJson('/api/v1/auth/email', ['email' => 'telegram-recovery@example.test'])
+        ->postJson('/api/v1/auth/email/verification/code', [
+            'challenge_id' => $verification->json('data.verification.challenge_id'),
+            'code' => $message->code,
+        ])
         ->assertOk()
-        ->assertJsonPath('data.email', 'telegram-recovery@example.test');
+        ->assertJsonPath('data.user.email', 'telegram-recovery@example.test')
+        ->assertJsonPath('data.user.email_verified', true);
+
+    $this->withHeaders($headers)
+        ->putJson('/api/v1/auth/password', [
+            'password' => 'telegram-account-passphrase',
+            'password_confirmation' => 'telegram-account-passphrase',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.has_password', true);
 
     $this->withHeaders($headers)
         ->getJson('/api/v1/auth/me')
         ->assertOk()
         ->assertJsonPath('data.user.username', null)
-        ->assertJsonPath('data.user.telegram_linked', true);
+        ->assertJsonPath('data.user.telegram_linked', true)
+        ->assertJsonPath('data.user.has_password', true);
 });
 
 it('links Telegram to an existing customer account and signs it in', function () {
@@ -111,6 +139,42 @@ it('links Telegram to an existing customer account and signs it in', function ()
         ->assertOk()
         ->assertJsonPath('data.user.id', $customer->getKey())
         ->assertJsonPath('data.role', 'customer');
+});
+
+it('does not allow Telegram sign-in or linking for an organization account', function () {
+    $tenant = TenantFixtures::createTenant('telegram-organization-account');
+    $owner = TenantFixtures::createMember($tenant, [], Role::Owner);
+    TenantFixtures::activate($tenant);
+    UserIdentity::query()->create([
+        'user_id' => $owner->getKey(),
+        'provider' => 'telegram',
+        'provider_subject' => '321654987',
+    ]);
+
+    $headers = [
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ];
+    $initData = signedTelegramInitData(
+        (string) config('services.telegram.main_bot_token'),
+        321654987,
+        time(),
+    );
+
+    $this->withHeaders($headers)
+        ->postJson('/api/v1/auth/telegram', [
+            'init_data' => $initData,
+            'bot' => 'main',
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($owner)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/auth/telegram/link', [
+            'init_data' => $initData,
+            'bot' => 'main',
+        ])
+        ->assertForbidden();
 });
 
 it('verifies Telegram authorization with the tenant bot when the launch URL omits its source', function () {

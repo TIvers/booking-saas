@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AccountType;
 use App\Enums\Role;
 use App\Models\Membership;
 use App\Models\Staff;
@@ -11,6 +12,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\UserIdentity;
 use App\Services\Auth\AccountMergeService;
+use App\Services\Auth\EmailVerificationService;
 use App\Services\Auth\GoogleIdentityVerifier;
 use App\Services\Telegram\TelegramIdentityTokenVerifier;
 use App\Services\Telegram\TelegramWebAppAuthenticator;
@@ -46,21 +48,53 @@ class AuthController
         ]);
     }
 
-    public function register(Request $request): JsonResponse
+    private function loginVerifiedEmailUser(Request $request, User $user): JsonResponse
     {
-        $tenantId = (int) $request->attributes->get('tenant')->getKey();
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $membership = Membership::query()
+            ->where('user_id', $user->getKey())
+            ->firstOrFail();
+        abort_if(
+            $membership->role === Role::Staff
+            && ! Staff::query()
+                ->where('user_id', $user->getKey())
+                ->where('is_active', true)
+                ->exists(),
+            Response::HTTP_FORBIDDEN,
+        );
+
+        Auth::guard('web')->login($user);
+        $request->session()->regenerate();
+
+        return response()->json(['data' => $this->userPayload($user, $tenant, $membership)]);
+    }
+
+    public function register(Request $request, EmailVerificationService $emailVerification): JsonResponse
+    {
+        $request->merge([
+            'username' => mb_strtolower(trim((string) $request->input('username'))),
+            'email' => mb_strtolower(trim((string) $request->input('email'))),
+        ]);
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'username' => [
-                'nullable',
-                'required_without:email',
+                'required',
                 'string',
                 'max:32',
                 'regex:/^[a-z0-9][a-z0-9_.-]{2,31}$/',
-                Rule::unique('memberships', 'username')->where('tenant_id', $tenantId),
+                Rule::unique('users', 'username')
+                    ->where('account_type', AccountType::Customer->value),
             ],
-            'email' => ['nullable', 'required_without:username', 'email', 'max:255'],
+            'email' => [
+                'required',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')
+                    ->where('account_type', AccountType::Customer->value),
+            ],
             'password' => ['required', 'string', 'min:12', 'confirmed'],
+            'verification_channel' => ['sometimes', Rule::in(['code', 'link'])],
         ]);
 
         /** @var Tenant $tenant */
@@ -77,8 +111,12 @@ class AuthController
                 DB::table('users')->insert([
                     'id' => $userId,
                     'name' => $validated['name'],
-                    'email' => $validated['email'] ?? null,
+                    'email' => $validated['email'],
+                    'account_type' => AccountType::Customer->value,
                     'password' => Hash::make($validated['password']),
+                    'username' => $validated['username'],
+                    'password_set_at' => $now,
+                    'email_verification_pending' => true,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
@@ -86,7 +124,7 @@ class AuthController
                 Membership::create([
                     'user_id' => $userId,
                     'role' => Role::Customer,
-                    'username' => $validated['username'] ?? null,
+                    'username' => $validated['username'],
                 ]);
 
                 return User::query()->findOrFail($userId);
@@ -98,14 +136,19 @@ class AuthController
 
             $constraint = $exception->errorInfo[2] ?? '';
 
-            if (str_contains($constraint, 'memberships_tenant_username')) {
+            if (
+                str_contains($constraint, 'username_lower_unique')
+            ) {
                 return response()->json([
-                    'message' => 'The username is already in use in this organization.',
-                    'errors' => ['username' => ['The username is already in use in this organization.']],
+                    'message' => 'This login is already in use.',
+                    'errors' => ['username' => ['This login is already in use.']],
                 ], 422);
             }
 
-            if (str_contains($constraint, 'users_email')) {
+            if (
+                str_contains($constraint, 'users_email')
+                || str_contains($constraint, 'email_lower_unique')
+            ) {
                 return response()->json([
                     'message' => 'The email address is already registered.',
                     'errors' => ['email' => ['The email address is already registered.']],
@@ -115,28 +158,57 @@ class AuthController
             throw $exception;
         }
 
-        Auth::guard('web')->login($user);
-        $request->session()->regenerate();
+        $verification = $emailVerification->issue(
+            $user,
+            $tenant,
+            $validated['email'],
+            'registration',
+            $validated['verification_channel'] ?? 'link',
+        );
 
-        return response()->json(['data' => $this->userPayload($user, $tenant)], 201);
+        return response()->json([
+            'data' => [
+                'status' => 'verification_required',
+                'verification' => $verification,
+            ],
+        ], Response::HTTP_ACCEPTED);
     }
 
-    public function login(Request $request): JsonResponse
+    public function login(Request $request, EmailVerificationService $emailVerification): JsonResponse
     {
+        return $this->loginForAccountType($request, $emailVerification, AccountType::Customer);
+    }
+
+    public function loginOrganization(
+        Request $request,
+        EmailVerificationService $emailVerification,
+    ): JsonResponse {
+        return $this->loginForAccountType($request, $emailVerification, AccountType::Organization);
+    }
+
+    private function loginForAccountType(
+        Request $request,
+        EmailVerificationService $emailVerification,
+        AccountType $accountType,
+    ): JsonResponse {
         $credentials = $request->validate([
             'login' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
+            'verification_channel' => ['sometimes', Rule::in(['code', 'link'])],
         ]);
 
         $login = trim($credentials['login']);
         $membership = null;
+        $isEmailLogin = filter_var($login, FILTER_VALIDATE_EMAIL) !== false;
 
-        if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
+        if ($isEmailLogin) {
             $membership = Membership::query()
                 ->with('user')
                 ->whereHas(
                     'user',
-                    fn ($query) => $query->whereRaw('LOWER(email) = ?', [mb_strtolower($login)])
+                    fn ($query) => $query
+                        ->where('account_type', $accountType->value)
+                        ->whereRaw('LOWER(email) = ?', [mb_strtolower($login)])
                 )
                 ->first();
         }
@@ -144,14 +216,63 @@ class AuthController
         if ($membership === null) {
             $membership = Membership::query()
                 ->with('user')
-                ->where('username', $login)
+                ->whereHas(
+                    'user',
+                    fn ($query) => $query
+                        ->where('account_type', $accountType->value)
+                        ->whereRaw('LOWER(username) = ?', [mb_strtolower($login)])
+                )
                 ->first();
         }
+
+        if ($membership === null) {
+            $membership = Membership::query()
+                ->with('user')
+                ->whereRaw('LOWER(username) = ?', [mb_strtolower($login)])
+                ->whereHas(
+                    'user',
+                    fn ($query) => $query->where('account_type', $accountType->value)
+                )
+                ->first();
+        }
+
+        $roleAllowed = $membership !== null && (
+            $accountType === AccountType::Customer
+                ? $membership->role === Role::Customer
+                : in_array($membership->role, [Role::Owner, Role::Manager, Role::Staff], true)
+        );
 
         if (
             $membership === null
             || $membership->user === null
+            || ! $roleAllowed
             || ! Hash::check($credentials['password'], $membership->user->getAuthPassword())
+        ) {
+            return response()->json(['message' => 'The provided credentials are invalid.'], 422);
+        }
+
+        $user = $membership->user;
+        if ($user->email_verification_pending) {
+            /** @var Tenant $tenant */
+            $tenant = $request->attributes->get('tenant');
+            $verification = $emailVerification->issue(
+                $user,
+                $tenant,
+                (string) $user->email,
+                'registration',
+                $credentials['verification_channel'] ?? 'link',
+            );
+
+            return response()->json([
+                'data' => [
+                    'status' => 'verification_required',
+                    'verification' => $verification,
+                ],
+            ], Response::HTTP_ACCEPTED);
+        }
+
+        if (
+            ($isEmailLogin && $user->email_verified_at === null)
             || (
                 $membership->role === Role::Staff
                 && ! Staff::query()
@@ -163,7 +284,6 @@ class AuthController
             return response()->json(['message' => 'The provided credentials are invalid.'], 422);
         }
 
-        $user = $membership->user;
         Auth::guard('web')->login($user, $request->boolean('remember'));
         $request->session()->regenerate();
 
@@ -198,47 +318,26 @@ class AuthController
     public function updateUsername(Request $request): JsonResponse
     {
         $membership = $this->membership($request);
+        /** @var User $user */
+        $user = $request->user();
 
-        abort_unless(
-            in_array($membership->role, [Role::Customer, Role::Staff], true),
-            Response::HTTP_FORBIDDEN,
-        );
-
-        $tenantId = (int) $request->attributes->get('tenant')->getKey();
+        $request->merge(['username' => mb_strtolower(trim((string) $request->input('username')))]);
+        DB::select("SELECT set_config('app.google_email_lookup', 'on', true)");
         $data = $request->validate([
             'username' => [
                 'required',
                 'string',
                 'max:32',
                 'regex:/^[a-z0-9][a-z0-9_.-]{2,31}$/',
-                Rule::unique('memberships', 'username')
-                    ->where('tenant_id', $tenantId)
-                    ->ignore($membership->getKey()),
+                Rule::unique('users', 'username')
+                    ->where('account_type', $user->account_type->value)
+                    ->ignore($user->getKey()),
             ],
         ]);
 
-        $membership->username = $data['username'];
-        $membership->save();
-
-        return response()->json(['data' => ['username' => $membership->username]]);
-    }
-
-    public function updateEmail(Request $request): JsonResponse
-    {
-        /** @var User $user */
-        $user = $request->user();
-        $data = $request->validate([
-            'email' => [
-                'required',
-                'email',
-                'max:255',
-                Rule::unique('users', 'email')->ignore($user->getKey()),
-            ],
-        ]);
+        $user->username = $data['username'];
 
         try {
-            $user->email = $data['email'];
-            $user->email_verified_at = null;
             $user->save();
         } catch (QueryException $exception) {
             if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23505') {
@@ -246,11 +345,132 @@ class AuthController
             }
 
             throw ValidationException::withMessages([
+                'username' => ['This login is already in use.'],
+            ]);
+        }
+
+        return response()->json(['data' => ['username' => $user->username]]);
+    }
+
+    public function updateEmail(Request $request, EmailVerificationService $emailVerification): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        /** @var Tenant $tenant */
+        $tenant = $request->attributes->get('tenant');
+        $request->merge(['email' => mb_strtolower(trim((string) $request->input('email')))]);
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+            'verification_channel' => ['sometimes', Rule::in(['code', 'link'])],
+        ]);
+
+        if ($user->email === $data['email'] && $user->email_verified_at !== null) {
+            return response()->json([
+                'data' => [
+                    'email' => $user->email,
+                    'email_verified' => true,
+                    'verification_required' => false,
+                ],
+            ]);
+        }
+
+        DB::select("SELECT set_config('app.google_email_lookup', 'on', true)");
+        $emailOwner = User::query()
+            ->where('account_type', $user->account_type->value)
+            ->whereRaw('LOWER(email) = ?', [$data['email']])
+            ->where('id', '<>', $user->getKey())
+            ->exists();
+
+        if ($emailOwner) {
+            throw ValidationException::withMessages([
                 'email' => ['The email address is already registered.'],
             ]);
         }
 
-        return response()->json(['data' => ['email' => $user->email]]);
+        $verification = $emailVerification->issue(
+            $user,
+            $tenant,
+            $data['email'],
+            'email_update',
+            $data['verification_channel'] ?? 'link',
+        );
+
+        return response()->json([
+            'data' => [
+                'email' => $data['email'],
+                'email_verified' => false,
+                'verification_required' => true,
+                'verification' => $verification,
+            ],
+        ], Response::HTTP_ACCEPTED);
+    }
+
+    public function setPassword(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+        $data = $request->validate([
+            'password' => ['required', 'string', 'min:12', 'confirmed'],
+        ]);
+
+        if ($user->email === null || $user->email_verified_at === null) {
+            throw ValidationException::withMessages([
+                'email' => ['Verify an email address before setting a password.'],
+            ]);
+        }
+
+        $user->password = $data['password'];
+        $user->password_set_at = now();
+        $user->save();
+
+        return response()->json(['data' => ['has_password' => true]]);
+    }
+
+    public function verifyEmailCode(
+        Request $request,
+        EmailVerificationService $emailVerification,
+    ): JsonResponse {
+        $data = $request->validate([
+            'challenge_id' => ['required', 'uuid'],
+            'code' => ['required', 'digits:6'],
+        ]);
+        $tenantId = (int) $request->attributes->get('tenant')->getKey();
+        $user = $emailVerification->verifyCode($data['challenge_id'], $data['code'], $tenantId);
+
+        return $this->loginVerifiedEmailUser($request, $user);
+    }
+
+    public function verifyEmailLink(
+        Request $request,
+        EmailVerificationService $emailVerification,
+    ): JsonResponse {
+        $data = $request->validate([
+            'challenge_id' => ['required', 'uuid'],
+            'token' => ['required', 'string', 'max:128'],
+        ]);
+        $tenantId = (int) $request->attributes->get('tenant')->getKey();
+        $user = $emailVerification->verifyLink($data['challenge_id'], $data['token'], $tenantId);
+
+        return $this->loginVerifiedEmailUser($request, $user);
+    }
+
+    public function resendEmailVerification(
+        Request $request,
+        EmailVerificationService $emailVerification,
+    ): JsonResponse {
+        $data = $request->validate([
+            'challenge_id' => ['required', 'uuid'],
+            'verification_channel' => ['required', Rule::in(['code', 'link'])],
+        ]);
+        $tenantId = (int) $request->attributes->get('tenant')->getKey();
+
+        return response()->json([
+            'data' => $emailVerification->resend(
+                $data['challenge_id'],
+                $tenantId,
+                $data['verification_channel'],
+            ),
+        ], Response::HTTP_ACCEPTED);
     }
 
     public function updateProfile(Request $request): JsonResponse
@@ -311,8 +531,19 @@ class AuthController
                 ->first();
             $userId = $identity?->user_id;
 
+            if (
+                $userId !== null
+                && DB::table('users')->where('id', $userId)->value('account_type')
+                    !== AccountType::Customer->value
+            ) {
+                throw ValidationException::withMessages([
+                    'credential' => ['Google sign-in is only available to client accounts.'],
+                ]);
+            }
+
             if ($userId === null) {
                 $existingUser = User::query()
+                    ->where('account_type', AccountType::Customer->value)
                     ->whereRaw('LOWER(email) = ?', [$google['email']])
                     ->first(['id']);
                 $userId = $existingUser?->getKey();
@@ -329,11 +560,21 @@ class AuthController
                     'id' => $userId,
                     'name' => mb_substr($name, 0, 255),
                     'email' => $google['email'],
+                    'account_type' => AccountType::Customer->value,
                     'password' => Hash::make(Str::random(64)),
                     'email_verified_at' => now(),
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+            } else {
+                User::query()
+                    ->whereKey($userId)
+                    ->whereRaw('LOWER(email) = ?', [$google['email']])
+                    ->whereNull('email_verified_at')
+                    ->update([
+                        'email_verified_at' => now(),
+                        'email_verification_pending' => false,
+                    ]);
             }
 
             $membership = Membership::query()
@@ -357,10 +598,7 @@ class AuthController
                 ]);
             }
 
-            return [
-                User::query()->findOrFail($userId),
-                $membership,
-            ];
+            return [User::query()->findOrFail($userId), $membership];
         });
 
         Auth::guard('web')->login($user, true);
@@ -376,6 +614,12 @@ class AuthController
         GoogleIdentityVerifier $verifier,
         AccountMergeService $accountMergeService,
     ): JsonResponse {
+        abort_unless(
+            $request->user()->account_type === AccountType::Customer,
+            Response::HTTP_FORBIDDEN,
+            'Google can only be linked to a client account.',
+        );
+
         $data = $request->validate([
             'credential' => ['required', 'string', 'max:8192'],
         ]);
@@ -385,6 +629,7 @@ class AuthController
         try {
             $linkResult = DB::transaction(function () use ($google, $userId, $accountMergeService): array {
                 $this->allowGoogleIdentityLookup();
+                DB::select("SELECT set_config('app.google_email_lookup', 'on', true)");
                 $existing = UserIdentity::query()
                     ->where('provider', 'google')
                     ->where('provider_subject', $google['sub'])
@@ -406,6 +651,37 @@ class AuthController
                             'email_verified_at' => now(),
                         ],
                     );
+                }
+
+                $current = User::query()->findOrFail($userId);
+                if ($current->email === null) {
+                    $emailOwner = User::query()
+                        ->where('account_type', AccountType::Customer->value)
+                        ->whereRaw('LOWER(email) = ?', [$google['email']])
+                        ->where('id', '<>', $userId)
+                        ->exists();
+
+                    if (! $emailOwner) {
+                        DB::table('users')
+                            ->where('id', $userId)
+                            ->update([
+                                'email' => $google['email'],
+                                'email_verified_at' => now(),
+                                'email_verification_pending' => false,
+                                'updated_at' => now(),
+                            ]);
+                    }
+                } elseif (
+                    mb_strtolower($current->email) === mb_strtolower($google['email'])
+                    && $current->email_verified_at === null
+                ) {
+                    DB::table('users')
+                        ->where('id', $userId)
+                        ->update([
+                            'email_verified_at' => now(),
+                            'email_verification_pending' => false,
+                            'updated_at' => now(),
+                        ]);
                 }
 
                 return [
@@ -489,6 +765,12 @@ class AuthController
 
         $request->session()->forget('telegram_oidc_pending');
         $userId = $identity['user_id'];
+        $user = User::query()->findOrFail($userId);
+        abort_unless(
+            $user->account_type === AccountType::Customer,
+            Response::HTTP_FORBIDDEN,
+            'Telegram sign-in is only available to client accounts.',
+        );
         $membership = DB::transaction(function () use ($userId): Membership {
             return Membership::query()
                 ->where('user_id', $userId)
@@ -499,20 +781,11 @@ class AuthController
         });
 
         abort_unless(
-            in_array($membership->role, [Role::Customer, Role::Staff], true),
+            $membership->role === Role::Customer,
             Response::HTTP_FORBIDDEN,
-            'Telegram sign-in is available only for customers and specialists.',
-        );
-        abort_if(
-            $membership->role === Role::Staff
-            && ! Staff::query()
-                ->where('user_id', $userId)
-                ->where('is_active', true)
-                ->exists(),
-            Response::HTTP_FORBIDDEN,
+            'Telegram sign-in is only available to client accounts.',
         );
 
-        $user = User::query()->findOrFail($userId);
         /** @var Tenant $tenant */
         $tenant = $request->attributes->get('tenant');
         Auth::guard('web')->login($user);
@@ -553,6 +826,7 @@ class AuthController
                     'id' => $userId,
                     'name' => $telegram['name'] ?: 'Пользователь Telegram',
                     'email' => null,
+                    'account_type' => AccountType::Customer->value,
                     'password' => Hash::make(Str::random(64)),
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -598,15 +872,8 @@ class AuthController
     ): JsonResponse {
         $membership = $this->membership($request);
         abort_unless(
-            in_array($membership->role, [Role::Customer, Role::Staff], true),
-            Response::HTTP_FORBIDDEN,
-        );
-        abort_if(
-            $membership->role === Role::Staff
-            && ! Staff::query()
-                ->where('user_id', $request->user()->getAuthIdentifier())
-                ->where('is_active', true)
-                ->exists(),
+            $request->user()->account_type === AccountType::Customer
+                && $membership->role === Role::Customer,
             Response::HTTP_FORBIDDEN,
         );
 
@@ -703,6 +970,12 @@ class AuthController
             ]);
         }
 
+        $user = User::query()->findOrFail($identity->user_id);
+        abort_unless(
+            $user->account_type === AccountType::Customer,
+            Response::HTTP_FORBIDDEN,
+            'Telegram sign-in is only available to client accounts.',
+        );
         $membership = DB::transaction(function () use ($identity): Membership {
             $membership = Membership::query()
                 ->where('user_id', $identity->user_id)
@@ -719,19 +992,9 @@ class AuthController
         });
 
         abort_unless(
-            in_array($membership->role, [Role::Customer, Role::Staff], true),
+            $membership->role === Role::Customer,
             Response::HTTP_FORBIDDEN,
-            'Telegram sign-in is available only for customers and specialists.',
-        );
-
-        $user = User::query()->findOrFail($identity->user_id);
-        abort_if(
-            $membership->role === Role::Staff
-            && ! Staff::query()
-                ->where('user_id', $user->getAuthIdentifier())
-                ->where('is_active', true)
-                ->exists(),
-            Response::HTTP_FORBIDDEN,
+            'Telegram sign-in is only available to client accounts.',
         );
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
@@ -778,6 +1041,7 @@ class AuthController
                     'id' => $userId,
                     'name' => $this->telegramName($telegram->user),
                     'email' => null,
+                    'account_type' => AccountType::Customer->value,
                     'password' => Hash::make(Str::random(64)),
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -820,15 +1084,8 @@ class AuthController
     ): JsonResponse {
         $membership = $this->membership($request);
         abort_unless(
-            in_array($membership->role, [Role::Customer, Role::Staff], true),
-            Response::HTTP_FORBIDDEN,
-        );
-        abort_if(
-            $membership->role === Role::Staff
-            && ! Staff::query()
-                ->where('user_id', $request->user()->getAuthIdentifier())
-                ->where('is_active', true)
-                ->exists(),
+            $request->user()->account_type === AccountType::Customer
+                && $membership->role === Role::Customer,
             Response::HTTP_FORBIDDEN,
         );
 
@@ -913,10 +1170,13 @@ class AuthController
         return [
             'user' => [
                 'id' => $user->getKey(),
+                'account_type' => $user->account_type->value,
                 'name' => $user->name,
                 'email' => $user->email,
+                'email_verified' => $user->email_verified_at !== null,
                 'phone' => $user->phone,
-                'username' => $membership->username,
+                'username' => $user->username ?? $membership->username,
+                'has_password' => $user->password_set_at !== null,
                 'telegram_linked' => $user->identities()
                     ->where('provider', 'telegram')
                     ->exists(),
