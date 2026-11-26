@@ -148,7 +148,6 @@ class DemoTenantSeeder extends Seeder
             $ownerId = (int) $owner->id;
 
             DB::table('users')->where('id', $ownerId)->update([
-                'name' => 'Владелец',
                 'password' => Hash::make($password),
                 'updated_at' => $now,
             ]);
