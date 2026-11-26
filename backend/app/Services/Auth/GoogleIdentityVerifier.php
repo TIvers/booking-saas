@@ -10,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 use JsonException;
 use RuntimeException;
 
-final class GoogleIdentityVerifier
+class GoogleIdentityVerifier
 {
     /**
      * @return array{sub: string, email: string, name: ?string}
