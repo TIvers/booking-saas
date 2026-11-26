@@ -14,11 +14,11 @@ const demoPaymentsEnabled = computed(() => tenantStore.tenant?.demo_payments_ena
     <header class="management__heading">
       <div>
         <p class="eyebrow">УПРАВЛЕНИЕ ОРГАНИЗАЦИЕЙ</p>
-        <h1>Кабинет бизнеса</h1>
+        <h1>Управление заведением</h1>
       </div>
     </header>
 
-    <nav class="management-nav" aria-label="Разделы кабинета">
+    <nav class="management-nav" aria-label="Разделы управления заведением">
       <RouterLink :to="{ name: 'manage-dashboard', params: { tenantSlug: tenantStore.slug ?? '' } }">Обзор</RouterLink>
       <RouterLink :to="{ name: 'manage-calendar', params: { tenantSlug: tenantStore.slug ?? '' } }">Календарь</RouterLink>
       <RouterLink :to="{ name: 'manage-bookings', params: { tenantSlug: tenantStore.slug ?? '' } }">Записи</RouterLink>

@@ -75,10 +75,10 @@ async function retryTenant(): Promise<void> {
             Кабинет специалиста
           </RouterLink>
           <RouterLink v-if="auth.canManageTenant || !auth.isAuthenticated" :to="managementLocation">
-            Кабинет
+            Управление
           </RouterLink>
           <RouterLink v-if="auth.isAuthenticated" :to="accountLocation">
-            Личный кабинет
+            Профиль
           </RouterLink>
           <RouterLink v-if="!auth.isAuthenticated" :to="loginLocation">Войти</RouterLink>
           <template v-else>

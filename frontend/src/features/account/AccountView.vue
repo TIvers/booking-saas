@@ -137,7 +137,7 @@ async function connectTelegram(): Promise<void> {
     <header class="page-heading">
       <div>
         <p class="eyebrow">ВАШ ПРОФИЛЬ</p>
-        <h1>Личный кабинет</h1>
+        <h1>Профиль</h1>
         <p>Управляйте личными данными и подключёнными аккаунтами.</p>
       </div>
     </header>
