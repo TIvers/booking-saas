@@ -27,7 +27,10 @@ it('creates a Google customer account and reuses it on later sign-ins', function
         ]);
     app()->instance(GoogleIdentityVerifier::class, $verifier);
 
-    $headers = ['X-Tenant' => (string) $tenant->getKey()];
+    $headers = [
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ];
     $payload = ['credential' => 'signed-google-token'];
 
     $this->withHeaders($headers)
@@ -68,7 +71,10 @@ it('links a Google account to an existing organization member by verified email'
         ]);
     app()->instance(GoogleIdentityVerifier::class, $verifier);
 
-    $this->withHeader('X-Tenant', (string) $tenant->getKey())
+    $this->withHeaders([
+        'Origin' => 'http://localhost',
+        'X-Tenant' => (string) $tenant->getKey(),
+    ])
         ->postJson('/api/v1/auth/google', ['credential' => 'signed-google-token'])
         ->assertOk()
         ->assertJsonPath('data.user.id', $owner->getKey())
