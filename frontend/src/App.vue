@@ -340,6 +340,7 @@ input:focus-visible {
 
   .site-nav > button {
     flex: 0 0 auto;
+    margin-left: auto;
     min-height: 2.75rem;
   }
 

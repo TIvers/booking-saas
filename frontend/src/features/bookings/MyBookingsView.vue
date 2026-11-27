@@ -847,6 +847,18 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
+  .booking-card__date,
+  .booking-card__details,
+  .booking-card__price,
+  .booking-card__actions {
+    flex: 0 1 auto;
+  }
+
+  .booking-comments {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+
   .booking-card__actions {
     justify-content: flex-start;
     width: 100%;
