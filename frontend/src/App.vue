@@ -9,6 +9,7 @@ import { useTenantStore } from '@/stores/tenant'
 const auth = useAuthStore()
 const tenant = useTenantStore()
 const router = useRouter()
+const isTelegramWebApp = computed(() => Boolean(window.Telegram?.WebApp))
 const ready = computed(() => !tenant.loading)
 const authError = ref('')
 const bookingLocation = computed(() =>
@@ -54,7 +55,7 @@ async function retryTenant(): Promise<void> {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'app-shell--telegram': isTelegramWebApp }">
     <header class="site-header">
       <RouterLink class="brand" :to="bookingLocation" aria-label="На главную">
         <span class="brand__mark" aria-hidden="true">b</span>
@@ -128,12 +129,14 @@ async function retryTenant(): Promise<void> {
 
 body {
   margin: 0;
-  min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -148,6 +151,8 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
+  min-height: var(--tg-viewport-stable-height, 100dvh);
 }
 
 .site-header {
@@ -305,8 +310,12 @@ input:focus-visible {
 
 @media (max-width: 540px) {
   .site-header {
-    align-items: flex-start;
-    padding: 0.75rem 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: max(0.65rem, env(safe-area-inset-top))
+      max(1rem, env(safe-area-inset-right))
+      0.65rem
+      max(1rem, env(safe-area-inset-left));
   }
 
   .brand__text small {
@@ -314,12 +323,24 @@ input:focus-visible {
   }
 
   .site-nav {
+    flex: 1 0 100%;
     gap: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    white-space: nowrap;
   }
 
   .site-nav > a {
     font-size: 0.8rem;
     padding: 0.6rem;
+    min-height: 2.75rem;
+  }
+
+  .site-nav > button {
+    flex: 0 0 auto;
+    min-height: 2.75rem;
   }
 
   .site-nav__user {
@@ -327,13 +348,65 @@ input:focus-visible {
   }
 
   .site-main {
-    padding: 0.7rem 0.8rem 2rem;
+    padding: 0.7rem max(0.8rem, env(safe-area-inset-right)) 2rem
+      max(0.8rem, env(safe-area-inset-left));
   }
 
   .site-footer {
     align-items: flex-start;
     flex-direction: column;
-    padding: 0.9rem 1rem;
+    padding: 0.9rem max(1rem, env(safe-area-inset-right))
+      max(0.9rem, env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
+  }
+}
+
+@media (max-width: 760px) {
+  .site-header {
+    flex-wrap: wrap;
+  }
+
+  .site-nav {
+    flex: 1 0 100%;
+    justify-content: flex-start;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 540px) {
+  button,
+  input,
+  select,
+  textarea,
+  .site-nav > a {
+    min-height: 2.75rem;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .app-shell--telegram .site-header {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+
+  .app-shell--telegram .site-main {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .app-shell--telegram .site-header {
+    padding-top: max(0.65rem, env(safe-area-inset-top));
+  }
+
+  .app-shell--telegram .site-footer {
+    display: none;
   }
 }
 </style>

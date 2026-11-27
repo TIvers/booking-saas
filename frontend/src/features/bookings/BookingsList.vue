@@ -746,5 +746,16 @@ onBeforeUnmount(() => {
     align-items: stretch;
     flex-direction: column-reverse;
   }
+
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0.5rem;
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .modal-card {
+    max-height: calc(100dvh - 1rem - env(safe-area-inset-top));
+    overflow-y: auto;
+  }
 }
 </style>

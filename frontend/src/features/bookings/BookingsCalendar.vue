@@ -394,4 +394,34 @@ onUnmounted(() => {
   font: inherit;
   text-decoration: underline;
 }
+
+@media (max-width: 640px) {
+  .calendar-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calendar-heading__actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .calendar-button {
+    min-width: 0;
+    padding: 0.45rem 0.35rem;
+  }
+
+  .calendar-scroll {
+    overflow: visible;
+  }
+
+  .calendar-grid {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .calendar-day {
+    min-height: 0;
+  }
+}
 </style>

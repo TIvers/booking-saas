@@ -993,5 +993,14 @@ onMounted(loadCatalog)
   .booking-summary dd {
     text-align: left;
   }
+
+  .wizard-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .wizard-actions > button {
+    width: 100%;
+  }
 }
 </style>
