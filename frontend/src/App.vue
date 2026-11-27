@@ -83,7 +83,7 @@ async function retryTenant(): Promise<void> {
           <RouterLink v-if="!auth.isAuthenticated" :to="loginLocation">Войти</RouterLink>
           <template v-else>
             <span class="site-nav__user">{{ auth.user?.name }}</span>
-            <BaseButton variant="ghost" @click="logout">Выйти</BaseButton>
+            <BaseButton class="site-nav__logout" variant="ghost" @click="logout">Выйти</BaseButton>
           </template>
         </template>
       </nav>
@@ -333,15 +333,21 @@ input:focus-visible {
   }
 
   .site-nav > a {
+    flex: 0 0 auto;
     font-size: 0.8rem;
     padding: 0.6rem;
     min-height: 2.75rem;
   }
 
-  .site-nav > button {
+  .site-nav > .base-button.site-nav__logout {
     flex: 0 0 auto;
-    margin-left: auto;
+    align-self: center;
+    height: 2.75rem;
     min-height: 2.75rem;
+    margin-left: 0;
+    padding: 0.6rem;
+    font-size: 0.8rem;
+    line-height: 1;
   }
 
   .site-nav__user {
