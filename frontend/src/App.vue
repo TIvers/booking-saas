@@ -333,8 +333,13 @@ input:focus-visible {
   }
 
   .site-nav > a {
+    align-items: center;
+    display: inline-flex;
     flex: 0 0 auto;
     font-size: 0.8rem;
+    font-weight: 650;
+    justify-content: center;
+    line-height: 1.2;
     padding: 0.6rem;
     min-height: 2.75rem;
   }
@@ -347,7 +352,9 @@ input:focus-visible {
     margin-left: 0;
     padding: 0.6rem;
     font-size: 0.8rem;
-    line-height: normal;
+    font-weight: 650;
+    justify-content: center;
+    line-height: 1.2;
   }
 
   .site-nav__user {
