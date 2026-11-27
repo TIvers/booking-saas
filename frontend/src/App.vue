@@ -347,7 +347,7 @@ input:focus-visible {
     margin-left: 0;
     padding: 0.6rem;
     font-size: 0.8rem;
-    line-height: 1;
+    line-height: normal;
   }
 
   .site-nav__user {
